@@ -1,0 +1,68 @@
+# unidic-cwj-trim
+
+**UniDic cwj-3.1.1 を軽量トリムし、Vibrato 向けにコンパイルした日本語形態素解析辞書。**
+
+フルサイズ辞書とほぼ同等の読み精度を保ちながら、**zstd 圧縮で約 7MB・wasm メモリ使用量 +84MB** まで削減。**Cloudflare Workers の 128MB メモリ上限内に辞書を丸ごと載せられます。**
+
+## ダウンロード
+
+[Releases](https://github.com/RiTa-23/unidic-cwj-trim/releases) から `.dic.zst` を取得してください。
+
+| アセット | 語彙数 | zst | wasm Δ（推定） | 特徴 |
+|---|---|---|---|---|
+| `unidic-cwj-v7800n-slim2.dic.zst`（推奨） | 539,835 | 6.9MB | +84.1MB | 精度とメモリのバランス最良。人名・固有名詞も収録 |
+| `unidic-cwj-vmax2.dic.zst` | 588,931 | 7.4MB | +105.3MB | 最大語彙。ロード瞬間のメモリピークが128MBに際どい |
+
+sha256（v7800n-slim2）: `aae2f56b6f88a2a6a2671a072248220166b708a1a4a8d2ffbff610d6c0d06d9f`
+
+## 特徴
+
+- **フルサイズとほぼ同等の読み精度**: 5,000文の実測で読み不明の差はごく僅か（フル比 63件 → トリム 71件）。「語彙が多すぎて変な読みを配信する」より「読めない→未登録（UNKNOWN）」に倒す設計
+- **Cloudflare Workers 対応サイズ**: ロード後のwasmメモリ増分 +84.1MB。ロード瞬間ピーク ~104MB で128MB上限内に収まる
+- **人名・固有名詞も収録**: 信長・織田信長・豊臣秀吉・卑弥呼・紫式部など正しく読める
+- **読みに特化した最小化**: 各エントリの特徴文字列は読み（`features[7]`）のみ保持。残りは潰して約25MB削減（5,000文の読み出力と**完全同一**を検証済み）
+
+## フォーマット
+
+Vibrato の辞書フォーマット（`vibrato` CLI の `compile` 出力、`zstd -19` 圧縮）。9フィールド IPADIC 互換の feature 文字列を持ち、**読みは `features[7]`** に入ります。
+
+```
+use vibrato::{Dictionary, Tokenizer};
+let dict = Dictionary::read_from_zstd(std::fs::File::open("unidic-cwj-v7800n-slim2.dic.zst")?)?;
+let tokenizer = Tokenizer::new(dict);
+// トークンの feature[7] がカタカナ読み
+```
+
+Cloudflare Workers（wasm-pack ビルドの vibrato-wasm）では、辞書を `assets/` に置いて `Reader.from_zstd` で初回リクエスト時に遅延ロードする構成を想定しています。
+
+## ユースケース
+
+- **エッジでの読み取得・振り仮名生成**（Cloudflare Workers / Deno Deploy 等のメモリ制約環境）
+- **漢字かな混じりテキストのルビ付け**（タイピングゲームのお題、学習アプリ、読み上げ前処理）
+- **形態素解析ベースの前処理**（検索クエリ正規化、分かち書き）
+- 人名・地名・一般名詞を広くカバーするので、固有名詞を含む文の読みも取れます
+
+## 再ビルド
+
+`scripts/` に再現レシピを同梱しています。
+
+```sh
+scripts/build_dict.sh   # cwj-3.1.1 ソース取得 → フィルタ → vibrato compile → zstd
+```
+
+- `scripts/filter_lex_v2.py`: lex.csv から語彙を絞り、特徴文字列を最小化するフィルタ（コスト閾値 V_MAX=7800 等）
+- `scripts/build_dict.sh`: 一連のビルド手順（vibrato 0.5.2, compact connector bigram, cost_factor=700.0）
+- `measure/`: wasmメモリ・読み出力の計測ハーネス（Rust）
+
+## ライセンス
+
+このリポジトリは2つのライセンスが混在します。
+
+- **スクリプト・ドキュメント等のコード**（`scripts/`, `measure/`, 本 README）: [MIT License](LICENSE)
+- **辞書アセット（`.dic.zst`）**: UniDic cwj-3.1.1 の派生物です。UniDic は GPL/LGPL/BSD のトリライセンスのうち、**本配布物では BSD ライセンスを選択**しています。再配布・利用の際は `LICENSE-BSD.unidic` / `COPYING.unidic` / `AUTHORS.unidic` の著作権表示を保持してください
+
+辞書の詳しいライセンス条件は [UniDic の利用許諾](https://clrd.ninjal.ac.jp/unidic/) を参照してください。
+
+## 謝辞
+
+辞書データは国立国語研究所の [UniDic](https://clrd.ninjal.ac.jp/unidic/) cwj-3.1.1 を元にしています。形態素解析エンジンは [Vibrato](https://github.com/daac-tools/vibrato) を利用しています。
