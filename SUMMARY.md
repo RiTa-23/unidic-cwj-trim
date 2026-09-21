@@ -1,4 +1,4 @@
-# HENGE UniDic移行 — 調査結果まとめ（Claude共有用）
+# HENGE UniDic移行 — 調査結果まとめ
 
 ## 結論
 **cwj-3.1.1 トリム辞書を Workers に載せる案が実測で成立。** 519,496語 → zst 8.0MB → wasm +109MB（現行 IPADIC +78MB・本番 P99 90.28MB と同程度の余裕、推定 ~121MB で際どい）。精度は full とほぼ互角、失敗モードは「読めない→却下」の安全側。full（+152〜320MB）は Workers 不可のため、将来の強化は Cloudflare Containers（2026-04-13 GA）が候補。
