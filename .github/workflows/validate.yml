@@ -1,0 +1,15 @@
+name: validate
+
+on:
+  push:
+    paths: ["user-lex.csv", "scripts/validate-user-lex.ts"]
+  pull_request:
+    paths: ["user-lex.csv"]
+
+jobs:
+  user-lex:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun scripts/validate-user-lex.ts
