@@ -1,0 +1,68 @@
+name: apply-reports
+
+# HENGEの承認済み読み違い報告を user-lex.csv に反映する自動PRワークフロー（#200）。
+# 手動起動（報告を承認した直後）か日次cronで走り、承認済み行をcsvに追記した
+# PRを自動作成する。PRをマージしたあとの再実行で HENGE 側の報告が applied に
+# 閉じられる。
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 毎日 00:00 UTC（JST 9:00）に承認済みがあれば拾う
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: 承認済み報告を user-lex.csv に追記
+        env:
+          HENGE_ORIGIN: ${{ vars.HENGE_ORIGIN }}
+          REPORTS_SYNC_TOKEN: ${{ secrets.REPORTS_SYNC_TOKEN }}
+        run: bun scripts/apply-reports.ts
+
+      - name: 構文検証
+        run: bun scripts/validate-user-lex.ts
+
+      - name: 変更がなければ終了
+        id: check
+        run: |
+          if git diff --quiet user-lex.csv; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: user-lex 更新PRを作成
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          n=$(wc -l < /tmp/user-lex-new-lines.txt || echo 0)
+          branch="bot/user-lex-$(date +%s)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add user-lex.csv
+          git commit -m "feat: 読み違い報告を user-lex.csv に反映（${n}行）
+
+          HENGEの承認済み報告を自動転記。このPRをマージしたあと
+          ワークフローの再実行で報告が applied に閉じられる。"
+          git push -u origin "$branch"
+          gh pr create \
+            --title "feat: 読み違い報告を user-lex.csv に反映（${n}行）" \
+            --body "HENGEの承認済み読み違い報告を自動転記したPRです。
+
+- 構文検証CI（validate-user-lex）はこのブランチでも実行済み
+- マージ後、HENGE側のCI（誤読回帰テスト）がデプロイ前に走るので、壊れた行は本番に出ません
+- マージ後にこのワークフローを再実行すると、HENGE側の報告が applied に閉じられます
+
+自動作成: \`apply-reports\` ワークフロー"
