@@ -74,3 +74,26 @@ scripts/build_dict.sh   # cwj-3.1.1 ソース取得 → フィルタ → vibrato
 ## 謝辞
 
 辞書データは国立国語研究所の [UniDic](https://clrd.ninjal.ac.jp/unidic/) cwj-3.1.1 を元にしています。形態素解析エンジンは [Vibrato](https://github.com/daac-tools/vibrato) を利用しています。
+
+## 報告の自動取り込み（apply-reports）
+
+HENGEのリザルト画面でユーザーが報告した読み違いは、管理画面で承認されると
+このリポジトリの `apply-reports` ワークフロー（手動 or 日次cron）が拾い、
+`user-lex.csv` に追記するPRを自動作成する。
+
+1. HENGE管理画面で報告を承認（読みのカタカナ正規化とコストを確定 or 自動推定に委ねる）
+2. ワークフローが `GET /api/admin/reading-reports?status=approved` を呼んで行を生成
+   - lid/rid は `lid-rid-map.tsv.gz`（v7800n-slim2 の各表層の最小コストエントリ）を
+     参照。表層が無ければ先頭1文字のエントリを借りる
+   - コストは承認値。未指定は「漢字のみ2字以上→-20000、他→3000」で推定
+3. `validate-user-lex` で構文検証してからPR作成（GH_TOKEN・GITHUB_TOKEN自動）
+4. PRマージ → 次回実行（--mark-applied-only）でHENGE側が applied に閉じられる
+   → HENGEのCI（誤読回帰テスト）がデプロイ時に走り、壊れた行は本番に出ない
+
+### 必要な設定（このリポジトリの Settings）
+
+| 名前 | 種別 | 内容 |
+|---|---|---|
+| `HENGE_ORIGIN` | Actions variable | HENGEの公開origin（例 `https://henge.app`） |
+| `REPORTS_SYNC_TOKEN` | Actions secret | HENGEの `wrangler secret put REPORTS_SYNC_TOKEN` と同じ値 |
+| `GITHUB_TOKEN` | 自動 | PR作成・pushに使用（permissions: contents/pull-requests write） |
