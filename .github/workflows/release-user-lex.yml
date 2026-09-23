@@ -1,0 +1,33 @@
+name: release-user-lex
+
+# user-lex.csv が main にマージされたら Release アセットを差し替える。
+# HENGEは `dict:fetch` でこのアセットを取るので、ここを更新しないと
+# 本番の読みWorkerは古いユーザー辞書を使い続ける。
+# アセット差し替え後にHENGE側を再デプロイ（Deployワークフローを手動起動 or 次回push）して反映。
+
+on:
+  push:
+    branches: [main]
+    paths: ["user-lex.csv"]
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Release アセットを差し替え
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload unidic-cwj-trim-v1 user-lex.csv --clobber
+
+      # HENGEは dict:fetch でアセットを取って読みWorkerに同梱するので、
+      # アセット更新だけでは本番に届かない。Deployを起動して取り込ませる。
+      # HENGE_DEPLOY_TOKEN = HENGEリポに Actions:write を持つ fine-grained PAT。
+      - name: HENGE の Deploy を起動
+        env:
+          GH_TOKEN: ${{ secrets.HENGE_DEPLOY_TOKEN }}
+        run: gh workflow run deploy.yml --repo RiTa-23/HENGE --ref main
