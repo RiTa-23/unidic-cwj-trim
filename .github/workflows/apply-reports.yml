@@ -23,6 +23,14 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      # 追記の前に実行すること。ローカルで追記した行がcsvに「存在する」扱いに
+      # なり、未マージの報告を誤って適用完了に閉じるのを防ぐため。
+      - name: HENGE側の適用完了を同期
+        env:
+          HENGE_ORIGIN: ${{ vars.HENGE_ORIGIN }}
+          REPORTS_SYNC_TOKEN: ${{ secrets.REPORTS_SYNC_TOKEN }}
+        run: bun scripts/apply-reports.ts --mark-applied-only
+
       - name: 承認済み報告を user-lex.csv に追記
         env:
           HENGE_ORIGIN: ${{ vars.HENGE_ORIGIN }}
