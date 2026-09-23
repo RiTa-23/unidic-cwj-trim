@@ -31,3 +31,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.HENGE_DEPLOY_TOKEN }}
         run: gh workflow run deploy.yml --repo RiTa-23/HENGE --ref main
+
+      # 既存お題の reading_kana は生成時点で凍結されるので、新しいアセットで
+      # 再読みして prod D1 を更新するバッチも起動する（差分のみ適用・冪等）。
+      - name: HENGE の既存お題再読みを起動
+        env:
+          GH_TOKEN: ${{ secrets.HENGE_DEPLOY_TOKEN }}
+        run: gh workflow run reread-prompts.yml --repo RiTa-23/HENGE --ref main
