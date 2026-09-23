@@ -24,6 +24,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload unidic-cwj-trim-v1 user-lex.csv --clobber
 
+      # マージされた時点で報告の「適用完了」をHENGE側に通知する。
+      # csv が main に入った = 適用済みなので、apply-reports の再実行を
+      # 待たずにこのワークフロー内で閉じる（冪等: 対象が無ければ何もしない）。
+      - uses: oven-sh/setup-bun@v2
+
+      - name: HENGE側の報告を適用完了に更新
+        env:
+          HENGE_ORIGIN: ${{ vars.HENGE_ORIGIN }}
+          REPORTS_SYNC_TOKEN: ${{ secrets.REPORTS_SYNC_TOKEN }}
+        run: bun scripts/apply-reports.ts --mark-applied-only
+
       # HENGEは dict:fetch でアセットを取って読みWorkerに同梱するので、
       # アセット更新だけでは本番に届かない。Deployを起動して取り込ませる。
       # HENGE_DEPLOY_TOKEN = HENGEリポに Actions:write を持つ fine-grained PAT。
