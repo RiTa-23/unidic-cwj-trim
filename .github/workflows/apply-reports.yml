@@ -59,10 +59,4 @@ jobs:
           git push -u origin "$branch"
           gh pr create \
             --title "feat: 読み違い報告を user-lex.csv に反映（${n}行）" \
-            --body "HENGEの承認済み読み違い報告を自動転記したPRです。
-
-- 構文検証CI（validate-user-lex）はこのブランチでも実行済み
-- マージ後、HENGE側のCI（誤読回帰テスト）がデプロイ前に走るので、壊れた行は本番に出ません
-- マージ後にこのワークフローを再実行すると、HENGE側の報告が applied に閉じられます
-
-自動作成: \`apply-reports\` ワークフロー"
+            --body "$(printf 'HENGEの承認済み読み違い報告を自動転記したPRです。\n\n- 構文検証CI（validate-user-lex）はこのブランチでも実行済み\n- マージ後、HENGE側のCI（誤読回帰テスト）がデプロイ前に走るので、壊れた行は本番に出ません\n- マージ後にこのワークフローを再実行すると、HENGE側の報告が applied に閉じられます\n\n自動作成: `apply-reports` ワークフロー')"
