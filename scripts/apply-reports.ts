@@ -9,7 +9,11 @@
  *        表層そのものが無ければ先頭1文字の名詞エントリを借りる
  *      - 品詞は借用元の pos1（なければ名詞扱い）
  *      - cost: 報告の承認値。未指定なら「全部漢字2字以上→-20000、それ以外→3000」の
- *        ヒューリスティックで自動推定（本格的な掃引は将来の estimate-cost）
+ *        ヒューリスティックで自動推定。
+ *        `UNIDIC_DIC_PATH` と `READING_WASM_PKG_DIR` が揃っていれば、代わりに
+ *        実測ミニマム探索（#12: promptText を再トークナイズして
+ *        expectedKana が切れる最小コスト）を使う。検証ログは
+ *        /tmp/user-lex-cost-log.md に残す（PR本文用）。
  *   3. すでに csv にある行（surface+読み一致）はスキップ。approved 行のうち
  *      csv にあるものは適用完了とみなし POST /applied に id を返す
  *   4. 変更があれば git 差分として残す（PR化は呼び出し側のワークフローがやる）
@@ -71,14 +75,27 @@ function estimateCost(surface: string): number {
 }
 
 // ---- 既存csv ----
+const existingCsv = existsSync(csvPath) ? readFileSync(csvPath, "utf8") : "";
 const existing = new Set<string>();
-if (existsSync(csvPath)) {
-  for (const line of readFileSync(csvPath, "utf8").split("\n")) {
-    if (!line || line.startsWith("#")) continue;
-    const f = line.split(",");
-    existing.add(`${f[0]}\t${f[11]}`);
-  }
+for (const line of existingCsv.split("\n")) {
+  if (!line || line.startsWith("#")) continue;
+  const f = line.split(",");
+  existing.add(`${f[0]}\t${f[11]}`);
 }
+
+// ---- 実測ミニマムコスト探索（#12）。環境変数が揃ったときだけ有効 ----
+const dicPath = process.env.UNIDIC_DIC_PATH;
+const pkgDir = process.env.READING_WASM_PKG_DIR;
+let costReader: import("./cost-reader").CostReader | null = null;
+if (dicPath && pkgDir && existsSync(dicPath)) {
+  const { CostReader } = await import("./cost-reader");
+  costReader = await CostReader.load(dicPath, pkgDir, existingCsv);
+  console.log("実測コスト探索: 有効");
+} else {
+  console.log("実測コスト探索: 辞書/pkg未指定のためスキップ（ヒューリスティック）");
+}
+const costLog: string[] = [];
+const unresolved: string[] = [];
 
 // ---- 承認済み報告を取得 ----
 const res = await fetch(
@@ -102,10 +119,22 @@ for (const r of reports) {
   }
   if (markOnly) continue;
   const conn = connector(r.surface);
-  const cost = r.cost ?? estimateCost(r.surface);
-  newLines.push(
-    `${r.surface},${conn.lid},${conn.rid},${cost},${conn.pos1},*,*,*,*,*,*,${r.expectedKana},*`,
-  );
+  const template = `${r.surface},${conn.lid},${conn.rid},{cost},${conn.pos1},*,*,*,*,*,*,${r.expectedKana},*`;
+  let cost = r.cost;
+  if (cost === null && costReader) {
+    const pick = costReader.pickCost(r.promptText, r.surface, r.expectedKana, template);
+    if (pick.cost !== null) {
+      cost = pick.cost;
+      costLog.push(`- \`${r.surface}\` → ${r.expectedKana}: cost **${cost}**（実測で勝った最小値）`);
+    } else {
+      unresolved.push(r.surface);
+      costLog.push(
+        `- \`${r.surface}\` → ${r.expectedKana}: **未解決**（-20000でも勝たず。複合エントリか手動設計が必要。暫定 ${estimateCost(r.surface)}）`,
+      );
+    }
+  }
+  cost ??= estimateCost(r.surface);
+  newLines.push(template.replace("{cost}", String(cost)));
   appliedIds.push(r.id); // このPRに載った行も、このPRがマージされれば適用完了
 }
 
@@ -114,6 +143,30 @@ if (newLines.length > 0) {
   console.log(`追記: ${newLines.length}行`);
 } else {
   console.log("追記なし");
+}
+
+// ---- 巻き込みチェック（#12）: 最終csvで各報告の promptText を再トークナイズし、
+// 報告表層の範囲外で変わった読み・切れ目を拾う ----
+if (costReader && newLines.length > 0) {
+  const extraCsv = newLines.join("\n") + "\n";
+  const collateral: string[] = [];
+  for (const r of reports) {
+    if (existing.has(`${r.surface}\t${r.expectedKana}`)) continue;
+    for (const d of costReader.collateralDiff(r.promptText, r.surface, extraCsv)) {
+      collateral.push(`- \`${r.surface}\` 周辺: ${d}（${r.promptText.slice(0, 20)}…）`);
+    }
+  }
+  costLog.push("", "### 巻き込みチェック（報告promptTextの読み diff）");
+  if (collateral.length === 0) {
+    costLog.push("- 報告対象以外の読みに変化なし");
+  } else {
+    costLog.push(...collateral.map((c) => `${c} ⚠️`));
+  }
+  writeFileSync(
+    "/tmp/user-lex-cost-log.md",
+    `## 実測コスト探索の検証ログ\n\n${costLog.join("\n")}\n`,
+  );
+  console.log(`検証ログ: /tmp/user-lex-cost-log.md（未解決=${unresolved.length}, 巻き込み=${collateral.length}）`);
 }
 
 // applied 通知は --mark-applied-only のときだけ送る
