@@ -8,8 +8,10 @@ name: apply-reports
 on:
   workflow_dispatch:
   schedule:
-    # 毎日 00:00 UTC（JST 9:00）に承認済みがあれば拾う
-    - cron: "0 0 * * *"
+    # 毎日 20:45 UTC（JST 5:45）に承認済みがあれば拾う。
+    # 毎時00分・00:00 UTC 帯は GitHub Actions の schedule が最も混雑して
+    # 大幅な遅延・スキップが起きるため、空いている時刻にずらしている。
+    - cron: "45 20 * * *"
 
 permissions:
   contents: write
