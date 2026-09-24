@@ -14,9 +14,11 @@
  *        実測ミニマム探索（#12: promptText を再トークナイズして
  *        expectedKana が切れる最小コスト）を使う。検証ログは
  *        /tmp/user-lex-cost-log.md に残す（PR本文用）。
- *   3. すでに csv にある行（surface+読み一致）はスキップ。approved 行のうち
+ *   3. 同一（表層, 読み）の報告は1行に集約。文脈ごとに実測コストが違う場合は
+ *      全文脈で勝てる最小値を採用する
+ *   4. すでに csv にある行（surface+読み一致）はスキップ。approved 行のうち
  *      csv にあるものは適用完了とみなし POST /applied に id を返す
- *   4. 変更があれば git 差分として残す（PR化は呼び出し側のワークフローがやる）
+ *   5. 変更があれば git 差分として残す（PR化は呼び出し側のワークフローがやる）
  *
  * 使い方:
  *   REPORTS_SYNC_TOKEN=... HENGE_ORIGIN=https://henge.app \
@@ -109,33 +111,62 @@ if (!res.ok) {
 const { reports } = (await res.json()) as { reports: Report[] };
 console.log(`approved: ${reports.length}件`);
 
-const appliedIds: string[] = [];
-const newLines: string[] = [];
+// ---- 同一（表層, 読み）の報告を1行に集約 ----
+// 既存csvとの照合では同一バッチ内の重複を拾えないため先にグルーピングする。
+// 文脈ごとに「勝てる最小コスト」が違うので、グループ内の全文脈で実測し、
+// 全文脈で勝てる最小値（=最も低いコスト）を採用して1行だけ書く。
+interface Group {
+  surface: string;
+  expectedKana: string;
+  reports: Report[];
+}
+const groups = new Map<string, Group>();
 for (const r of reports) {
   const key = `${r.surface}\t${r.expectedKana}`;
+  const g = groups.get(key) ?? { surface: r.surface, expectedKana: r.expectedKana, reports: [] };
+  g.reports.push(r);
+  groups.set(key, g);
+}
+
+const appliedIds: string[] = [];
+const newLines: string[] = [];
+for (const [key, g] of groups) {
+  const ids = g.reports.map((r) => r.id);
   if (existing.has(key)) {
-    appliedIds.push(r.id);
+    appliedIds.push(...ids);
     continue;
   }
   if (markOnly) continue;
-  const conn = connector(r.surface);
-  const template = `${r.surface},${conn.lid},${conn.rid},{cost},${conn.pos1},*,*,*,*,*,*,${r.expectedKana},*`;
-  let cost = r.cost;
+  const conn = connector(g.surface);
+  const template = `${g.surface},${conn.lid},${conn.rid},{cost},${conn.pos1},*,*,*,*,*,*,${g.expectedKana},*`;
+  let cost = g.reports.find((r) => r.cost !== null)?.cost ?? null;
   if (cost === null && costReader) {
-    const pick = costReader.pickCost(r.promptText, r.surface, r.expectedKana, template);
-    if (pick.cost !== null) {
-      cost = pick.cost;
-      costLog.push(`- \`${r.surface}\` → ${r.expectedKana}: cost **${cost}**（実測で勝った最小値）`);
-    } else {
-      unresolved.push(r.surface);
+    const texts = [...new Set(g.reports.map((r) => r.promptText))];
+    let best: number | null = null;
+    let failed = 0;
+    for (const t of texts) {
+      const pick = costReader.pickCost(t, g.surface, g.expectedKana, template);
+      if (pick.cost === null) failed += 1;
+      else if (best === null || pick.cost < best) best = pick.cost;
+    }
+    if (best !== null) {
+      cost = best;
+      const how =
+        g.reports.length > 1
+          ? `${g.reports.length}件を集約・全文脈で勝つ最小値`
+          : "実測で勝った最小値";
+      costLog.push(`- \`${g.surface}\` → ${g.expectedKana}: cost **${cost}**（${how}）`);
+    }
+    if (failed > 0) {
+      unresolved.push(g.surface);
       costLog.push(
-        `- \`${r.surface}\` → ${r.expectedKana}: **未解決**（-20000でも勝たず。複合エントリか手動設計が必要。暫定 ${estimateCost(r.surface)}）`,
+        `- \`${g.surface}\` → ${g.expectedKana}: **${failed}/${texts.length}文脈が未解決**（-20000でも勝たず。複合エントリか手動設計が必要${best === null ? `。暫定 ${estimateCost(g.surface)}` : ""}）`,
       );
     }
   }
-  cost ??= estimateCost(r.surface);
+  cost ??= estimateCost(g.surface);
   newLines.push(template.replace("{cost}", String(cost)));
-  appliedIds.push(r.id); // このPRに載った行も、このPRがマージされれば適用完了
+  appliedIds.push(...ids); // このPRに載った行も、このPRがマージされれば適用完了
 }
 
 if (newLines.length > 0) {
@@ -150,8 +181,12 @@ if (newLines.length > 0) {
 if (costReader && newLines.length > 0) {
   const extraCsv = newLines.join("\n") + "\n";
   const collateral: string[] = [];
+  const seenCtx = new Set<string>();
   for (const r of reports) {
     if (existing.has(`${r.surface}\t${r.expectedKana}`)) continue;
+    const ctxKey = `${r.promptText} ${r.surface}`;
+    if (seenCtx.has(ctxKey)) continue;
+    seenCtx.add(ctxKey);
     for (const d of costReader.collateralDiff(r.promptText, r.surface, extraCsv)) {
       collateral.push(`- \`${r.surface}\` 周辺: ${d}（${r.promptText.slice(0, 20)}…）`);
     }

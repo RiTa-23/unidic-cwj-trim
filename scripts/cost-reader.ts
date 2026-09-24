@@ -101,22 +101,6 @@ export interface PickResult {
   attempts: { cost: number; kana: string | null }[]; // 各コストでの実読み（検証ログ用）
 }
 
-export interface SpanTok extends Tok {
-  start: number;
-  end: number;
-}
-function tokenizeSpans(out: string): SpanTok[] {
-  const toks = parseTokens(out);
-  const spans: SpanTok[] = [];
-  let pos = 0;
-  for (const t of toks) {
-    const len = [...t.surface].length;
-    spans.push({ ...t, start: pos, end: pos + len });
-    pos += len;
-  }
-  return spans;
-}
-
 /** 試すコスト列。現行デフォルト 3000 から弱→強の順。 */
 export const COST_CANDIDATES = [
   3000, 2000, 1000, 0, -1000, -2000, -3000, -5000, -8000, -12000, -16000, -20000,
@@ -138,7 +122,7 @@ export class CostReader {
     return this.wasm.Reader.from_zstd(this.dict, userCsv);
   }
 
-  /** 素の（csv指定時の）読みを返す。巻き込みチェック用。 */
+  /** baseCsv(+extraCsv) 適用時の promptText 全体の読みを返す。巻き込みチェック用。 */
   readKana(text: string, extraCsv = ""): string {
     const r = this.withCsv(extraCsv ? `${this.baseCsv}${extraCsv}` : this.baseCsv);
     try {
@@ -149,9 +133,10 @@ export class CostReader {
   }
 
   /**
-   * 巻き込みチェック: extraCsv 適用前後で promptText をトークナイズし、
-   * surface が占める文字範囲と**交差しない**トークンで読み・切れ目が
-   * 変わったものを返す（報告対象の修正自体は除外）。
+   * 巻き込みチェック: 報告 surface の前後のテキストをそれぞれ単独で
+   * 再トークナイズし、周辺テキストの**読み**が extraCsv で変わるかを返す。
+   * （全文トークナイズ結果のトークン比較だと、表層エントリ追加で隣接
+   * トークンの切れ目がずれるだけで誤検知になるため、読みで見る）
    */
   collateralDiff(
     promptText: string,
@@ -159,25 +144,28 @@ export class CostReader {
     extraCsv: string,
   ): string[] {
     const at = promptText.indexOf(surface);
-    const spanStart = at;
+    if (at === -1) return [];
     const spanEnd = at + [...surface].length;
-    const run = (csv: string) => {
+    const kanaOf = (text: string, csv: string): string => {
+      if (!text) return "";
       const r = this.withCsv(csv);
       try {
-        return tokenizeSpans(r.tokenize(promptText));
+        return parseTokens(r.tokenize(text)).map((t) => t.kana).join("");
       } finally {
         r.free();
       }
     };
-    const before = run(this.baseCsv);
-    const after = run(`${this.baseCsv}${extraCsv}`);
-    // surface範囲と交差しないトークン同士を読み・表層で比較
-    const notIn = (t: SpanTok) => t.end <= spanStart || t.start >= spanEnd;
-    const b = before.filter(notIn).map((t) => `${t.surface}:${t.kana}`);
-    const a = after.filter(notIn).map((t) => `${t.surface}:${t.kana}`);
+    const withExtra = `${this.baseCsv}${extraCsv}`;
     const diffs: string[] = [];
-    for (let i = 0; i < Math.max(b.length, a.length); i++) {
-      if (b[i] !== a[i]) diffs.push(`${b[i] ?? "(なし)"} → ${a[i] ?? "(なし)"}`);
+    for (const [label, part] of [
+      ["前方", promptText.slice(0, at)],
+      ["後方", promptText.slice(spanEnd)],
+    ] as const) {
+      const bk = kanaOf(part, this.baseCsv);
+      const ak = kanaOf(part, withExtra);
+      if (bk !== ak) {
+        diffs.push(`${label}「${part.length > 14 ? `${part.slice(0, 14)}…` : part}」の読み: ${bk} → ${ak}`);
+      }
     }
     return diffs;
   }
