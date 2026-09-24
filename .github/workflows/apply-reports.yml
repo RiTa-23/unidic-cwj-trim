@@ -31,10 +31,19 @@ jobs:
           REPORTS_SYNC_TOKEN: ${{ secrets.REPORTS_SYNC_TOKEN }}
         run: bun scripts/apply-reports.ts --mark-applied-only
 
+      # 実測コスト探索（#12）用にシステム辞書を Release 資産から取得。
+      # wasm pkg は vendor/reading-wasm-pkg にリポジトリ同梱済み。
+      - name: システム辞書（UniDic trim）を取得
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download unidic-cwj-trim-v1 -p 'unidic-cwj-*.dic.zst' -D /tmp/dict --clobber
+
       - name: 承認済み報告を user-lex.csv に追記
         env:
           HENGE_ORIGIN: ${{ vars.HENGE_ORIGIN }}
           REPORTS_SYNC_TOKEN: ${{ secrets.REPORTS_SYNC_TOKEN }}
+          UNIDIC_DIC_PATH: /tmp/dict/unidic-cwj-v7800n-slim2.dic.zst
+          READING_WASM_PKG_DIR: vendor/reading-wasm-pkg
         run: bun scripts/apply-reports.ts
 
       - name: 構文検証
@@ -65,6 +74,8 @@ jobs:
           HENGEの承認済み報告を自動転記。このPRをマージしたあと
           ワークフローの再実行で報告が applied に閉じられる。"
           git push -u origin "$branch"
+          log=""
+          [ -f /tmp/user-lex-cost-log.md ] && log="\n\n$(cat /tmp/user-lex-cost-log.md)"
           gh pr create \
             --title "feat: 読み違い報告を user-lex.csv に反映（${n}行）" \
-            --body "$(printf 'HENGEの承認済み読み違い報告を自動転記したPRです。\n\n- 構文検証CI（validate-user-lex）はこのブランチでも実行済み\n- マージ後、HENGE側のCI（誤読回帰テスト）がデプロイ前に走るので、壊れた行は本番に出ません\n- マージ後にこのワークフローを再実行すると、HENGE側の報告が applied に閉じられます\n\n自動作成: `apply-reports` ワークフロー')"
+            --body "$(printf "HENGEの承認済み読み違い報告を自動転記したPRです。\n\n- 構文検証CI（validate-user-lex）はこのブランチでも実行済み\n- マージ後、HENGE側のCI（誤読回帰テスト）がデプロイ前に走るので、壊れた行は本番に出ません\n- マージ後にこのワークフローを再実行すると、HENGE側の報告が applied に閉じられます\n${log}\n\n自動作成: \`apply-reports\` ワークフロー")"
