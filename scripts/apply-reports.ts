@@ -16,9 +16,12 @@
  *        /tmp/user-lex-cost-log.md に残す（PR本文用）。
  *   3. 同一（表層, 読み）の報告は1行に集約。文脈ごとに実測コストが違う場合は
  *      全文脈で勝てる最小値を採用する
- *   4. すでに csv にある行（surface+読み一致）はスキップ。approved 行のうち
+ *   4. 語彙の巻き込みチェック（#19、`scripts/lib/collateral.ts`）: 追加する行ごとに、
+ *      その表層を含む辞書語彙の読みが変わらないかを見る。変わる行は PR に載せず、
+ *      ジョブのサマリと PR 本文に理由を出す（報告は approved のまま残る）
+ *   5. すでに csv にある行（surface+読み一致）はスキップ。approved 行のうち
  *      csv にあるものは適用完了とみなし POST /applied に id を返す
- *   5. 変更があれば git 差分として残す（PR化は呼び出し側のワークフローがやる）。
+ *   6. 変更があれば git 差分として残す（PR化は呼び出し側のワークフローがやる）。
  *      PR のタイトル用の行数と本文を /tmp に書き出す（`--body-file` で渡す）
  *
  * 使い方:
@@ -32,6 +35,8 @@ import { execSync } from "node:child_process";
 import { existsSync, readFileSync, appendFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { findRegressions, formatRegressions, surfaceOf } from "./lib/collateral";
+import { Analyzer } from "./lib/reading";
 
 // `URL#pathname` を使わない。パスに日本語などが入ると %E3… のまま残り、別の場所を指す
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -181,6 +186,39 @@ for (const [key, g] of groups) {
   appliedIds.push(...ids); // このPRに載った行も、このPRがマージされれば適用完了
 }
 
+// ---- 語彙の巻き込みチェック（#19）: 1行ずつ、その表層を含む辞書の語の読みが変わらないか ----
+// 報告文を解析し直すだけでは、1字の裸登録（田→タ で 水田→みずた）の副作用を拾えない
+const vocabularyHits: string[] = [];
+if (costReader && newLines.length > 0) {
+  const baseCsv = existingCsv === "" || existingCsv.endsWith("\n") ? existingCsv : `${existingCsv}\n`;
+  const base = await Analyzer.open(baseCsv);
+  for (const line of [...newLines]) {
+    // 行ごとに辞書を組み直す（数百ミリ秒）。1回の実行で足す行は多くて数十
+    // oxlint-disable-next-line no-await-in-loop
+    const candidate = await Analyzer.open(`${baseCsv}${line}\n`);
+    const regressions = findRegressions([surfaceOf(line)], base, candidate);
+    candidate.close();
+    if (regressions.length === 0) continue;
+    newLines.splice(newLines.indexOf(line), 1);
+    vocabularyHits.push(`- \`${line}\``, ...formatRegressions(regressions).map((t) => `  - ${t}`));
+  }
+  base.close();
+  if (vocabularyHits.length > 0) {
+    const text = [
+      "## 語彙の巻き込みがあるため見送った行",
+      "",
+      "辞書の1語として読めていた語の読みが、この行を足すと変わる。報告は approved のまま残るので、",
+      "表層を前後に広げる・コストを決めて承認し直す・却下する、のどれかを HENGE の管理画面で選ぶ。",
+      "",
+      ...vocabularyHits,
+      "",
+    ].join("\n");
+    writeFileSync("/tmp/user-lex-vocabulary.md", text);
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
+    console.log(text);
+  }
+}
+
 if (newLines.length > 0) {
   appendFileSync(csvPath, newLines.join("\n") + "\n");
   console.log(`追記: ${newLines.length}行`);
@@ -255,6 +293,7 @@ writeFileSync(
           ...sameSurface,
         ]
       : []),
+    ...(vocabularyHits.length > 0 ? ["", readFileSync("/tmp/user-lex-vocabulary.md", "utf8")] : []),
     ...(existsSync("/tmp/user-lex-cost-log.md")
       ? ["", readFileSync("/tmp/user-lex-cost-log.md", "utf8")]
       : []),

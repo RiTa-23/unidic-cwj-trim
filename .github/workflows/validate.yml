@@ -6,15 +6,18 @@ name: validate
 on:
   push:
     branches: [main]
-    paths: ["user-lex.csv", "scripts/**"]
+    paths: ["user-lex.csv", "scripts/**", "collateral-allow.tsv"]
   pull_request:
-    paths: ["user-lex.csv", "scripts/**"]
+    paths: ["user-lex.csv", "scripts/**", "collateral-allow.tsv"]
 
 jobs:
   user-lex:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # 語彙の巻き込みチェックで、PR の base の user-lex.csv と比べる
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -29,3 +32,7 @@ jobs:
       - name: 誤読回帰（直したい読みになるか・複合語を壊さないか）
         run: bun test
 
+      # 増えた行が、その表層を含む辞書の語の読みを変えないか（#19）
+      - name: 語彙の巻き込み
+        if: github.event_name == 'pull_request'
+        run: bun scripts/check-collateral.ts --base "origin/${{ github.base_ref }}"
