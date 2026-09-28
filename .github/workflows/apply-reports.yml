@@ -25,7 +25,14 @@ jobs:
   apply:
     runs-on: ubuntu-latest
     steps:
+      # **main から作り直す。** 手動起動で bot/user-lex などを選ぶと、その CSV には未マージの
+      # 行が入っていて「変更なし」と判定され、必要な PR を閉じてしまう。
+      # 履歴は全部取る。浅いクローンだと main の過去のコミットが bot ブランチ側にだけ
+      # 見え、人のコミットと取り違える
       - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -75,14 +82,16 @@ jobs:
           branch="bot/user-lex"
           bot_email="github-actions[bot]@users.noreply.github.com"
           pr=$(gh pr list --head "$branch" --state open --json number -q '.[0].number // empty')
+          # いまのブランチの先頭。push はこの値を前提にする（無ければ空＝ブランチが無い前提）
+          remote_sha=$(git ls-remote --heads origin "refs/heads/$branch" | cut -f1)
 
-          # 人がこのブランチにコミットしていたら上書きしない（#17 の手直しのようなケース）。
-          # 「Update branch」のマージコミットは数えない
-          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+          # 開いている PR に人がコミットしていたら上書きしない（#17 の手直しのようなケース）。
+          # 「Update branch」のマージコミットは数えない。PR を閉じた後のブランチは古いものとして作り直す
+          if [ -n "$pr" ] && [ -n "$remote_sha" ]; then
             git fetch -q origin "$branch"
-            humans=$(git log --no-merges --format='%ae' "origin/main..origin/$branch" | grep -vxF "$bot_email" || true)
+            humans=$(git log --no-merges --format='%ae' "origin/main..$remote_sha" | grep -vxF "$bot_email" || true)
             if [ -n "$humans" ]; then
-              echo "::warning::$branch に人のコミットがあるため作り直さない。PR #${pr:-?} をマージするか閉じると自動更新が再開する"
+              echo "::warning::PR #$pr（$branch）に人のコミットがあるため作り直さない。マージするか閉じると自動更新が再開する"
               exit 0
             fi
           fi
@@ -102,7 +111,8 @@ jobs:
           git checkout -B "$branch"
           git add user-lex.csv
           git commit -q -m "$title" -m "HENGEの承認済み報告を自動転記。apply-reports が実行のたびに作り直す。"
-          git push -q --force origin "$branch"
+          # 上の確認のあとに人が push していたら、上書きせずに失敗させる
+          git push -q --force-with-lease="refs/heads/$branch:$remote_sha" origin "$branch"
           if [ -n "$pr" ]; then
             gh pr edit "$pr" --title "$title" --body-file /tmp/user-lex-pr-body.md
           else
