@@ -18,7 +18,8 @@
  *      全文脈で勝てる最小値を採用する
  *   4. すでに csv にある行（surface+読み一致）はスキップ。approved 行のうち
  *      csv にあるものは適用完了とみなし POST /applied に id を返す
- *   5. 変更があれば git 差分として残す（PR化は呼び出し側のワークフローがやる）
+ *   5. 変更があれば git 差分として残す（PR化は呼び出し側のワークフローがやる）。
+ *      PR のタイトル用の行数と本文を /tmp に書き出す（`--body-file` で渡す）
  *
  * 使い方:
  *   REPORTS_SYNC_TOKEN=... HENGE_ORIGIN=https://henge.app \
@@ -81,10 +82,13 @@ function estimateCost(surface: string): number {
 // ---- 既存csv ----
 const existingCsv = existsSync(csvPath) ? readFileSync(csvPath, "utf8") : "";
 const existing = new Set<string>();
+/** 表層 → csv にある読み。同じ表層が別の読みで入っていれば、手で直された可能性を知らせる */
+const existingReadings = new Map<string, string[]>();
 for (const line of existingCsv.split("\n")) {
   if (!line || line.startsWith("#")) continue;
   const f = line.split(",");
   existing.add(`${f[0]}\t${f[11]}`);
+  existingReadings.set(f[0], [...(existingReadings.get(f[0]) ?? []), f[11]]);
 }
 
 // ---- 実測ミニマムコスト探索（#12）。環境変数が揃ったときだけ有効 ----
@@ -132,6 +136,8 @@ for (const r of reports) {
 
 const appliedIds: string[] = [];
 const newLines: string[] = [];
+/** 同じ表層が csv に別の読みで入っている報告（手で直されたまま approved に残っている可能性） */
+const sameSurface: string[] = [];
 for (const [key, g] of groups) {
   const ids = g.reports.map((r) => r.id);
   if (existing.has(key)) {
@@ -139,6 +145,10 @@ for (const [key, g] of groups) {
     continue;
   }
   if (markOnly) continue;
+  const others = existingReadings.get(g.surface);
+  if (others !== undefined) {
+    sameSurface.push(`- \`${g.surface}\` → ${g.expectedKana}（csv には ${others.join(" / ")}）`);
+  }
   const conn = connector(g.surface);
   const template = `${g.surface},${conn.lid},${conn.rid},{cost},${conn.pos1},*,*,*,*,*,*,${g.expectedKana},*`;
   let cost = g.reports.find((r) => r.cost !== null)?.cost ?? null;
@@ -217,6 +227,39 @@ if (markOnly && appliedIds.length > 0) {
   console.log(`applied 通知: ${r.status}（${appliedIds.length}件）`);
 }
 
-// PR作成用に新規行をファイルにも残す
-writeFileSync("/tmp/user-lex-new-lines.txt", newLines.join("\n"));
+// ---- PR 作成用の出力 ----
+// 行数はファイルで渡す。**行一覧を最後の改行なしで書いて `wc -l` で数えると1少なくなる**
+// （「0行」の #9 は実際には1行、「8行」の #20 は9行だった）
+writeFileSync("/tmp/user-lex-new-count", String(newLines.length));
+writeFileSync(
+  "/tmp/user-lex-pr-body.md",
+  [
+    "HENGEの承認済み読み違い報告を自動転記したPRです。",
+    "",
+    "- **このPRは `apply-reports` が実行のたびに承認済みの報告から作り直す**（force-push）。HENGE 側で承認を取り消した・却下した報告は、次の実行でこのPRから外れる。承認済みが無くなればPRは閉じる",
+    "- 行を手で直したいときは、このブランチにコミットする。人のコミットがあるあいだは自動の作り直しを止める（マージするか閉じれば再開する）",
+    "- マージすると `release-user-lex` が Release を差し替え、HENGE 側の報告を適用完了に閉じる",
+    "",
+    "## 追加する行",
+    "",
+    "```csv",
+    ...newLines,
+    "```",
+    ...(sameSurface.length > 0
+      ? [
+          "",
+          "## 同じ表層が別の読みで csv に入っている",
+          "",
+          "手で直した行と報告が食い違っていると、報告が適用完了に閉じないまま毎回ここに載る。意図した読みでなければ HENGE の管理画面で却下する。",
+          "",
+          ...sameSurface,
+        ]
+      : []),
+    ...(existsSync("/tmp/user-lex-cost-log.md")
+      ? ["", readFileSync("/tmp/user-lex-cost-log.md", "utf8")]
+      : []),
+    "",
+    "自動作成: `apply-reports` ワークフロー",
+  ].join("\n"),
+);
 console.log(`done: applied対象=${appliedIds.length}, new=${newLines.length}`);
