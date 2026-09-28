@@ -29,9 +29,11 @@
  */
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, appendFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 
-const root = new URL("..", import.meta.url).pathname;
+// `URL#pathname` を使わない。パスに日本語などが入ると %E3… のまま残り、別の場所を指す
+const root = fileURLToPath(new URL("..", import.meta.url));
 const csvPath = `${root}user-lex.csv`;
 const mapPath = `${root}lid-rid-map.tsv.gz`;
 const markOnly = process.argv.includes("--mark-applied-only");

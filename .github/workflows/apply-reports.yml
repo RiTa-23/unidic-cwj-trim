@@ -21,9 +21,11 @@ jobs:
   apply:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
 
       # 追記の前に実行すること。ローカルで追記した行がcsvに「存在する」扱いに
       # なり、未マージの報告を誤って適用完了に閉じるのを防ぐため。
