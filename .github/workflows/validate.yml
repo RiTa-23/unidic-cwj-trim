@@ -1,17 +1,31 @@
 name: validate
 
+# user-lex.csv の検査。**Release の差し替え（release-user-lex）はマージの後なので、
+# ここを通っていない行は HENGE に届かない。** 誤読回帰の本検査もここで行う
+# （もとは HENGE の CI にあり、Release の差し替えと本番の再読みより後に走っていた）。
 on:
   push:
-    paths: ["user-lex.csv", "scripts/validate-user-lex.ts"]
+    branches: [main]
+    paths: ["user-lex.csv", "scripts/**"]
   pull_request:
-    paths: ["user-lex.csv"]
+    paths: ["user-lex.csv", "scripts/**"]
 
 jobs:
   user-lex:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.14"
-      - run: bun scripts/validate-user-lex.ts
+
+      - name: 構文（13列・整数・カタカナ読み）
+        run: bun scripts/validate-user-lex.ts
+
+      - name: システム辞書を取得
+        run: bun scripts/fetch-dict.ts
+
+      - name: 誤読回帰（直したい読みになるか・複合語を壊さないか）
+        run: bun test
+
