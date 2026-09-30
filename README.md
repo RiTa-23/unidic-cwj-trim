@@ -92,9 +92,11 @@ HENGEのリザルト画面でユーザーが報告した読み違いは、管理
    - lid/rid は `lid-rid-map.tsv.gz`（v7800n-slim2 の各表層の最小コストエントリ）を
      参照。表層が無ければ先頭1文字のエントリを借りる
    - コストは承認値。未指定は「漢字のみ2字以上→-20000、他→3000」で推定
-3. `validate-user-lex` で構文検証してからPR作成（GH_TOKEN・GITHUB_TOKEN自動）
-4. PRマージ → 次回実行（--mark-applied-only）でHENGE側が applied に閉じられる
-   → HENGEのCI（誤読回帰テスト）がデプロイ時に走り、壊れた行は本番に出ない
+3. 構文検証・誤読回帰（`bun test`）・語彙の巻き込み（追加行をまとめて）を**push の前に**かけてから
+   PR を作る（GH_TOKEN・GITHUB_TOKEN自動）。**bot の PR では `validate` が自動で走らない**
+   （Actions のトークンで作った PR・push は別のワークフローを起動しない）ので、ここで検査する
+4. PRマージ → `release-user-lex` が Release を差し替え、HENGE側の報告を applied に閉じ、
+   HENGE の Deploy を起動する（デプロイの後に既存お題を再読み）
 
 ### 必要な設定（このリポジトリの Settings）
 

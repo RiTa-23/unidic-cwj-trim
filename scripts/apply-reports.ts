@@ -111,15 +111,27 @@ const costLog: string[] = [];
 const unresolved: string[] = [];
 
 // ---- 承認済み報告を取得 ----
-const res = await fetch(
-  `${origin}/api/admin/reading-reports?status=approved&limit=200`,
-  { headers: { authorization: `Bearer ${token}` } },
-);
-if (!res.ok) {
-  console.error(`報告の取得に失敗: ${res.status} ${await res.text()}`);
-  process.exit(1);
+// **全件をページ送りで取る。** 1回の上限（200件）で打ち切ると、PR を承認済みの集合から
+// 作り直す前提が崩れる。巻き込みで見送った報告は approved のまま残って溜まるので、
+// 200件を超えた古い報告が PR からも適用完了の通知からも黙って落ちる
+const PAGE = 200;
+const reports: Report[] = [];
+for (let cursor = 0; ; cursor += PAGE) {
+  // oxlint-disable-next-line no-await-in-loop
+  const res = await fetch(
+    `${origin}/api/admin/reading-reports?status=approved&limit=${PAGE}&cursor=${cursor}`,
+    { headers: { authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) {
+    console.error(`報告の取得に失敗: ${res.status} ${await res.text()}`);
+    process.exit(1);
+  }
+  const page = ((await res.json()) as { reports: Report[] }).reports;
+  // オフセット方式なので、読むあいだに承認が増えると前のページの末尾がもう一度来る
+  const seenIds = new Set(reports.map((r) => r.id));
+  reports.push(...page.filter((r) => !seenIds.has(r.id)));
+  if (page.length < PAGE) break;
 }
-const { reports } = (await res.json()) as { reports: Report[] };
 console.log(`approved: ${reports.length}件`);
 
 // ---- 同一（表層, 読み）の報告を1行に集約 ----

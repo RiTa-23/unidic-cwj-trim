@@ -3,6 +3,10 @@ name: validate
 # user-lex.csv の検査。**Release の差し替え（release-user-lex）はマージの後なので、
 # ここを通っていない行は HENGE に届かない。** 誤読回帰の本検査もここで行う
 # （もとは HENGE の CI にあり、Release の差し替えと本番の再読みより後に走っていた）。
+#
+# **bot の PR（bot/user-lex）ではこのワークフローは自動で走らない**（Actions のトークンで
+# 作った PR・push は別のワークフローを起動しない）。同じ検査を apply-reports が push の前に
+# かけている。人が bot のブランチにコミットしたときは、その push でここが走る。
 on:
   push:
     branches: [main]
