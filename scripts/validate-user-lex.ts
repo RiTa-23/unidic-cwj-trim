@@ -7,8 +7,10 @@
  * 使い方: `bun scripts/validate-user-lex.ts`（リポジトリルートから）
  */
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const csvPath = new URL("../user-lex.csv", import.meta.url).pathname;
+// `URL#pathname` を使わない。パスに日本語などが入ると %E3… のまま残り、別の場所を指す
+const csvPath = fileURLToPath(new URL("../user-lex.csv", import.meta.url));
 const text = readFileSync(csvPath, "utf8");
 const lines = text.split("\n").filter((line) => line.length > 0 && !line.startsWith("#"));
 

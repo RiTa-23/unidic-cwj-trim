@@ -17,7 +17,7 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Release アセットを差し替え
         env:
@@ -28,6 +28,8 @@ jobs:
       # csv が main に入った = 適用済みなので、apply-reports の再実行を
       # 待たずにこのワークフロー内で閉じる（冪等: 対象が無ければ何もしない）。
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
 
       - name: HENGE側の報告を適用完了に更新
         env:

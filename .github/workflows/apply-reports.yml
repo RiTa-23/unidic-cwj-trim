@@ -1,9 +1,13 @@
 name: apply-reports
 
 # HENGEの承認済み読み違い報告を user-lex.csv に反映する自動PRワークフロー（#200）。
-# 手動起動（報告を承認した直後）か日次cronで走り、承認済み行をcsvに追記した
-# PRを自動作成する。PRをマージしたあとの再実行で HENGE 側の報告が applied に
-# 閉じられる。
+# 手動起動（報告を承認した直後）か日次cronで走る。
+#
+# **PR は1本だけ持つ。** ブランチは `bot/user-lex` に固定し、実行のたびに main と
+# 承認済みの報告から作り直して force-push する。開いている PR があれば更新し、
+# 承認済みが無くなれば閉じる。こうしないと、マージ待ちのあいだ毎日同じ行で PR が
+# 増え（#21・#22）、HENGE で承認を取り消した行も開いている PR に残り続ける。
+# PR がマージされると release-user-lex が HENGE 側の報告を applied に閉じる。
 
 on:
   workflow_dispatch:
@@ -21,9 +25,18 @@ jobs:
   apply:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # **main から作り直す。** 手動起動で bot/user-lex などを選ぶと、その CSV には未マージの
+      # 行が入っていて「変更なし」と判定され、必要な PR を閉じてしまう。
+      # 履歴は全部取る。浅いクローンだと main の過去のコミットが bot ブランチ側にだけ
+      # 見え、人のコミットと取り違える
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
 
       # 追記の前に実行すること。ローカルで追記した行がcsvに「存在する」扱いに
       # なり、未マージの報告を誤って適用完了に閉じるのを防ぐため。
@@ -60,24 +73,48 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: user-lex 更新PRを作成
-        if: steps.check.outputs.changed == 'true'
+      - name: user-lex 更新PRを作り直す
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGED: ${{ steps.check.outputs.changed }}
         run: |
-          n=$(wc -l < /tmp/user-lex-new-lines.txt || echo 0)
-          branch="bot/user-lex-$(date +%s)"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
-          git add user-lex.csv
-          git commit -m "feat: 読み違い報告を user-lex.csv に反映（${n}行）
+          set -euo pipefail
+          branch="bot/user-lex"
+          bot_email="github-actions[bot]@users.noreply.github.com"
+          pr=$(gh pr list --head "$branch" --state open --json number -q '.[0].number // empty')
+          # いまのブランチの先頭。push はこの値を前提にする（無ければ空＝ブランチが無い前提）
+          remote_sha=$(git ls-remote --heads origin "refs/heads/$branch" | cut -f1)
 
-          HENGEの承認済み報告を自動転記。このPRをマージしたあと
-          ワークフローの再実行で報告が applied に閉じられる。"
-          git push -u origin "$branch"
-          log=""
-          [ -f /tmp/user-lex-cost-log.md ] && log="\n\n$(cat /tmp/user-lex-cost-log.md)"
-          gh pr create \
-            --title "feat: 読み違い報告を user-lex.csv に反映（${n}行）" \
-            --body "$(printf "HENGEの承認済み読み違い報告を自動転記したPRです。\n\n- 構文検証CI（validate-user-lex）はこのブランチでも実行済み\n- マージ後、HENGE側のCI（誤読回帰テスト）がデプロイ前に走るので、壊れた行は本番に出ません\n- マージ後にこのワークフローを再実行すると、HENGE側の報告が applied に閉じられます\n${log}\n\n自動作成: \`apply-reports\` ワークフロー")"
+          # 開いている PR に人がコミットしていたら上書きしない（#17 の手直しのようなケース）。
+          # 「Update branch」のマージコミットは数えない。PR を閉じた後のブランチは古いものとして作り直す
+          if [ -n "$pr" ] && [ -n "$remote_sha" ]; then
+            git fetch -q origin "$branch"
+            humans=$(git log --no-merges --format='%ae' "origin/main..$remote_sha" | grep -vxF "$bot_email" || true)
+            if [ -n "$humans" ]; then
+              echo "::warning::PR #$pr（$branch）に人のコミットがあるため作り直さない。マージするか閉じると自動更新が再開する"
+              exit 0
+            fi
+          fi
+
+          if [ "$CHANGED" != "true" ]; then
+            if [ -n "$pr" ]; then
+              gh pr close "$pr" --delete-branch \
+                --comment "承認済みで未反映の報告が無くなったため閉じる（取り消し・却下・反映済み）。次に承認されたら作り直す。"
+            fi
+            exit 0
+          fi
+
+          n=$(cat /tmp/user-lex-new-count)
+          title="feat: 読み違い報告を user-lex.csv に反映（${n}行）"
+          git config user.name "github-actions[bot]"
+          git config user.email "$bot_email"
+          git checkout -B "$branch"
+          git add user-lex.csv
+          git commit -q -m "$title" -m "HENGEの承認済み報告を自動転記。apply-reports が実行のたびに作り直す。"
+          # 上の確認のあとに人が push していたら、上書きせずに失敗させる
+          git push -q --force-with-lease="refs/heads/$branch:$remote_sha" origin "$branch"
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "$title" --body-file /tmp/user-lex-pr-body.md
+          else
+            gh pr create --head "$branch" --base main --title "$title" --body-file /tmp/user-lex-pr-body.md
+          fi
