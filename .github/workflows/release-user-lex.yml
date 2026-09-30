@@ -3,7 +3,7 @@ name: release-user-lex
 # user-lex.csv が main にマージされたら Release アセットを差し替える。
 # HENGEは `dict:fetch` でこのアセットを取るので、ここを更新しないと
 # 本番の読みWorkerは古いユーザー辞書を使い続ける。
-# アセット差し替え後にHENGE側を再デプロイ（Deployワークフローを手動起動 or 次回push）して反映。
+# 検査（validate: 構文・誤読回帰・語彙の巻き込み）は PR の時点で済んでいる。
 
 on:
   push:
@@ -39,15 +39,11 @@ jobs:
 
       # HENGEは dict:fetch でアセットを取って読みWorkerに同梱するので、
       # アセット更新だけでは本番に届かない。Deployを起動して取り込ませる。
+      # **既存お題の再読みは Deploy に任せる**（reread: true）。Deploy は CI とデプロイが
+      # 通ってから再読みを呼ぶので、読み Worker が壊れた辞書で本番 D1 を書き換えない。
+      # 以前は再読みを Deploy と同時に別で起動しており、CI より先に走っていた。
       # HENGE_DEPLOY_TOKEN = HENGEリポに Actions:write を持つ fine-grained PAT。
-      - name: HENGE の Deploy を起動
+      - name: HENGE の Deploy（デプロイ後に既存お題を再読み）を起動
         env:
           GH_TOKEN: ${{ secrets.HENGE_DEPLOY_TOKEN }}
-        run: gh workflow run deploy.yml --repo RiTa-23/HENGE --ref main
-
-      # 既存お題の reading_kana は生成時点で凍結されるので、新しいアセットで
-      # 再読みして prod D1 を更新するバッチも起動する（差分のみ適用・冪等）。
-      - name: HENGE の既存お題再読みを起動
-        env:
-          GH_TOKEN: ${{ secrets.HENGE_DEPLOY_TOKEN }}
-        run: gh workflow run reread-prompts.yml --repo RiTa-23/HENGE --ref main
+        run: gh workflow run deploy.yml --repo RiTa-23/HENGE --ref main -f reread=true

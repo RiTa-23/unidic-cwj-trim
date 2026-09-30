@@ -47,7 +47,13 @@ Cloudflare Workers（wasm-pack ビルドの vibrato-wasm）では、辞書を `a
 `user-lex.csv` は本辞書の上に重ねる Vibrato ユーザー辞書です。誤読修正の例外的なエントリを1行ずつ追記していきます。
 
 - **管理場所**: このリポジトリで git 管理。誤読の表層（特に lid/rid は辞書ビルドの接続ID空間を参照する）を**辞書と同じ場所に置く**のが正しい
-- **検証**: PR ごとに `bun scripts/validate-user-lex.ts` が構文チェックを走らせる（13列・lid/rid/cost整数・読みカタカナ）。誤読回帰の本検査（実際に読みが変わるか/壊れるか）は利用側（HENGE）の CI が辞書取得後に行うため、ここでは機械的な構文チェックのみ
+- **検証**: PR ごとに CI（`validate`）が次の3つを走らせる。**Release の差し替えはマージの後なので、ここを通っていない行は利用側（HENGE）に届かない**
+  - 構文: `bun scripts/validate-user-lex.ts`（13列・lid/rid/cost整数・読みカタカナ）
+  - 誤読回帰: `bun test`（`scripts/regression.test.ts`。直したい読みになるか・既存の複合語を壊さないか。行を足したら、その文と壊しそうな複合語をここに足す）
+  - 語彙の巻き込み: `bun scripts/check-collateral.ts`。増えた行の表層を含む辞書の語を1語ずつ解析し、**辞書の1語として読めていた語の読みが変わったら失敗**にする。1字や語幹の裸登録（田→タ で 水田→みずた）はここで止まる。辞書の読みの方が誤っている場合だけ `collateral-allow.tsv` に足す
+  - 手元では `bun scripts/fetch-dict.ts`（システム辞書を `.cache/` に取る）のあとに同じコマンドを打つ。既存の全行の棚卸しは `bun scripts/check-collateral.ts --all`
+- **自動PR**: `apply-reports` が HENGE の承認済み報告から `bot/user-lex` ブランチの PR を1本だけ作り、実行のたびに作り直す。語彙の巻き込みがある行は PR に載せず、理由をジョブのサマリと PR 本文に出す
+- **反映**: マージされると `release-user-lex` が Release を差し替え、HENGE の Deploy を `reread=true` で起動する。HENGE はデプロイが通ってから既存お題を再読みする
 - **コストの目安**: `-20000` = 熟語等の強制勝ち、`3000` = 別読みには勝ち・複合語には負ける、`~7500` + lid/rid借用 = 同表層エントリの差し替え
 
 ## 再ビルド
@@ -86,9 +92,11 @@ HENGEのリザルト画面でユーザーが報告した読み違いは、管理
    - lid/rid は `lid-rid-map.tsv.gz`（v7800n-slim2 の各表層の最小コストエントリ）を
      参照。表層が無ければ先頭1文字のエントリを借りる
    - コストは承認値。未指定は「漢字のみ2字以上→-20000、他→3000」で推定
-3. `validate-user-lex` で構文検証してからPR作成（GH_TOKEN・GITHUB_TOKEN自動）
-4. PRマージ → 次回実行（--mark-applied-only）でHENGE側が applied に閉じられる
-   → HENGEのCI（誤読回帰テスト）がデプロイ時に走り、壊れた行は本番に出ない
+3. 構文検証・誤読回帰（`bun test`）・語彙の巻き込み（追加行をまとめて）を**push の前に**かけてから
+   PR を作る（GH_TOKEN・GITHUB_TOKEN自動）。**bot の PR では `validate` が自動で走らない**
+   （Actions のトークンで作った PR・push は別のワークフローを起動しない）ので、ここで検査する
+4. PRマージ → `release-user-lex` が Release を差し替え、HENGE側の報告を applied に閉じ、
+   HENGE の Deploy を起動する（デプロイの後に既存お題を再読み）
 
 ### 必要な設定（このリポジトリの Settings）
 

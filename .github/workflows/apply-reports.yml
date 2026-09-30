@@ -73,6 +73,24 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # **PR の CI に任せず、push の前にここで validate と同じ検査をかける。**
+      # Actions のトークンで作った PR・push では validate が自動で走らない（#21・#22 は
+      # ジョブ0件のまま終わり、#20 以前は手で再実行していた）。main は保護していないので、
+      # 検査されていない bot PR をそのままマージできてしまう。
+      # apply-reports.ts の巻き込みチェックは1行ずつなので、追加した行どうしの組み合わせは
+      # ここ（check-collateral）で初めて見る。落ちたら push しない。
+      - name: 誤読回帰（直したい読みになるか・複合語を壊さないか）
+        if: steps.check.outputs.changed == 'true'
+        env:
+          UNIDIC_DIC_PATH: /tmp/dict/unidic-cwj-v7800n-slim2.dic.zst
+        run: bun test
+
+      - name: 語彙の巻き込み（追加した行をまとめて）
+        if: steps.check.outputs.changed == 'true'
+        env:
+          UNIDIC_DIC_PATH: /tmp/dict/unidic-cwj-v7800n-slim2.dic.zst
+        run: bun scripts/check-collateral.ts --base origin/main
+
       - name: user-lex 更新PRを作り直す
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
