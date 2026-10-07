@@ -24,6 +24,12 @@
 #      lid/rid が同じだと文脈によらず濁音形が勝つ。接尾辞の lid にすると名詞の後（犬小屋・小春日和）では
 #      勝ち、文頭や助詞の後では基本形に負ける
 #   7. 特徴列を ",,,,,,,読み," に縮める（HENGE の読みは index 7 だけを見る）。wasm メモリ −8MB
+#
+# v3.1 で足した規則（reports/2026-10-reading-audit-r7.md。1004 件の追加実測で見つけたもの）:
+#   8. 動詞・形容詞は、どれか1行でも残した語彙素（語彙素+語彙素読み）について、標準表記の
+#      基本的な活用形（INFL_FORMS）をコストによらず残す。活用形は表層ごとに別の行なので、
+#      未然形「合わ」「響か」「向か」や仮定形「弱けれ」、終止形「溶く」だけが閾値で落ち、
+#      「合わない」が 合/あわせ+わ+ない、「溶く」が UNKNOWN_READING になっていた。約 3.8 万行増、wasm +2.5MB
 import argparse, csv, gzip, math, re, sys
 from collections import defaultdict
 
@@ -35,11 +41,16 @@ V_MAX, A_MAX, N_MAX, SN_MAX, P_MAX, NAME_MAX = 7800, 7200, 6200, 7800, 6800, 680
 COST_SHIFT = 5376
 FREQ_Z, FREQ_MARGIN = 2.0, 3000
 RENDAKU_LID, RENDAKU_PEN = "10234", 1500  # 10234 = 接尾辞-名詞的-一般 で最も多い lid
+INFLECTING = ("動詞", "形容詞")
+INFL_FORMS = ("未然形-一般", "連用形-一般", "連用形-促音便", "連用形-イ音便", "連用形-撥音便",
+              "終止形-一般", "連体形-一般", "仮定形-一般", "語幹-一般", "意志推量形", "命令形")
+INFL_SKIP_TAIL = "ろッー〜"  # 「困ろ」「巡ッ」「痛ー」のような崩れた形は救わない
 CONTENT = ("動詞", "形容詞", "名詞")
 KATA_ONLY = re.compile(r"^[ァ-ヺー]+$")
 
 # lex の列（表層,lid,rid,cost の後に特徴29列）
 SURF, LID, RID, COST, POS1, POS2, POS3 = 0, 1, 2, 3, 4, 5, 6
+CFORM, LFORM, LEMMA, ORTH, ORTH_BASE = 9, 10, 11, 12, 14
 IFORM, KANA = 18, 24
 
 
@@ -75,11 +86,24 @@ def main():
         if r[POS1] in CONTENT:
             min_cost[r[SURF]] = min(min_cost.get(r[SURF], 1 << 30), int(r[COST]))
 
-    def keep(r):
+    def keep_base(r):
         if r[POS1] in CONTENT and zipf.get(r[SURF], 0) >= FREQ_Z \
                 and int(r[COST]) <= min_cost[r[SURF]] + FREQ_MARGIN:
             return True
         return keep_by_cost(r)
+
+    def standard_form(r):
+        # 標準表記（書字形＝表層、書字形基本形＝語彙素、語彙素と同じ字で始まる）の基本的な活用形
+        return r[POS1] in INFLECTING and r[ORTH] == r[SURF] and r[ORTH_BASE] == r[LEMMA] \
+            and r[SURF][:1] == r[LEMMA][:1] and r[CFORM].startswith(INFL_FORMS) \
+            and r[SURF][-1:] not in INFL_SKIP_TAIL
+
+    lemmas = {(r[LEMMA], r[LFORM]) for r in rows
+              if r[POS1] in INFLECTING and r[ORTH] == r[SURF] and keep_base(r)}
+
+    def keep(r):
+        if keep_base(r): return True
+        return standard_form(r) and (r[LEMMA], r[LFORM]) in lemmas
 
     kept, index = [], {}
     for r in rows:
