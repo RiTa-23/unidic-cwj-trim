@@ -2,7 +2,9 @@
 # filter_lex_v3.py — cwj lex.csv → トリム辞書の lex（v3 案）。reports/2026-10-reading-audit.md の検証結果に基づく
 #
 #   使い方: python3 filter_lex_v3.py lex_3_1.csv out.csv [--unk unk.def --unk-out unk_shifted.def]
-#   依存:   pip install wordfreq（頻出語の救済に使う。語の頻度表は wordfreq に同梱）
+#                                                    [--lid-rid-map lid-rid-map.tsv.gz]
+#   依存:   pip install -r scripts/requirements.txt（wordfreq。頻出語の救済に使う。頻度表は同梱）
+#   ビルド全体は scripts/build_dict.sh
 #
 # v2（filter_lex_v2.py）からの変更点。どれも 783 文の実測で効果を確かめたもの:
 #   1. 語コストに +5376（COST_SHIFT）を足す。compact bigram 接続表は MeCab の接続行列より
@@ -22,7 +24,7 @@
 #      lid/rid が同じだと文脈によらず濁音形が勝つ。接尾辞の lid にすると名詞の後（犬小屋・小春日和）では
 #      勝ち、文頭や助詞の後では基本形に負ける
 #   7. 特徴列を ",,,,,,,読み," に縮める（HENGE の読みは index 7 だけを見る）。wasm メモリ −8MB
-import argparse, csv, math, re, sys
+import argparse, csv, gzip, math, re, sys
 from collections import defaultdict
 
 csv.field_size_limit(sys.maxsize)
@@ -61,6 +63,7 @@ def main():
     ap.add_argument("lex"); ap.add_argument("out")
     ap.add_argument("--unk", help="unk.def。COST_SHIFT を足した版を --unk-out に書く")
     ap.add_argument("--unk-out")
+    ap.add_argument("--lid-rid-map", help="apply-reports が使う 表層→最小コスト行の lid/rid/品詞 の表（gzip tsv）")
     a = ap.parse_args()
 
     from wordfreq import get_frequency_dict
@@ -108,6 +111,18 @@ def main():
             w.writerow([r[SURF], r[LID], r[RID], clamp16(int(r[COST]) + COST_SHIFT),
                         "", "", "", "", "", "", "", kana, ""])
     print(f"rows: {len(kept)} (濁音形の付け替え {remapped})", file=sys.stderr)
+
+    if a.lid_rid_map:
+        # 表層ごとに、辞書に入れた行のうち最小コストの行（apply-reports が lid/rid を借りる）
+        best = {}
+        for r in kept:
+            c = int(r[COST])
+            if r[SURF] not in best or c < best[r[SURF]][0]:
+                best[r[SURF]] = (c, r[LID], r[RID], r[POS1][:1] if r[POS1] else "*")
+        with gzip.GzipFile(a.lid_rid_map, "wb", mtime=0) as gz:
+            gz.write("# surface\tlid\trid\tpos1\t（v3 各表層の最小コストエントリ）\n".encode("utf-8"))
+            for surf, (_, lid, rid, pos1) in best.items():
+                gz.write(f"{surf}\t{lid}\t{rid}\t{pos1}\n".encode("utf-8"))
 
     if a.unk:
         with open(a.unk_out, "w", encoding="utf-8", newline="") as f:

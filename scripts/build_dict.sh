@@ -1,36 +1,45 @@
 #!/bin/bash
-# cwj-3.1.1 → トリム版 vibrato 辞書 (.dic.zst) 再現ビルド手順
-# 前提: cargo (rust), zstd, python3 が入っていること
+# cwj-3.1.1 → トリム辞書 v3（unidic-cwj-v3.dic.zst）の再現ビルド。
+# Release の辞書はこの手順で作る（.github/workflows/build-dict.yml が CI で同じものを回す）。
+#
+#   使い方: scripts/build_dict.sh [作業ディレクトリ（既定 /tmp/cwj311）]
+#   前提:   cargo（rust）, python3（pip install -r scripts/requirements.txt）, zstd, curl
+#   成果物: <作業>/build/unidic-cwj-v3.dic.zst と lid-rid-map.tsv.gz
+#
+# 規則は scripts/filter_lex_v3.py の先頭、根拠は reports/2026-10-reading-audit.md。
+# compact bigram 接続表（vibrato の generate_bigram_info）は MeCab の接続行列より全ペアで
+# 約5376低いので、filter_lex_v3.py が語彙と未知語の語コストに +5376 を足して打ち消す。
+# **user-lex.csv のコストも同じ基準（+5376 済み）で書くこと。**
 set -euo pipefail
 
+REPO=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${1:-/tmp/cwj311}
-mkdir -p "$WORK" && cd "$WORK"
-
-# --- 1. cwj-3.1.1 ソース一式を取得（full配布の個別ファイルURL） ---
 BASE=https://clrd.ninjal.ac.jp/unidic_archive/cwj/3.1.1/unidic-cwj-3.1.1-full
-for f in lex_3_1.csv char.def unk.def feature.def left-id.def right-id.def dicrc model.def; do
-  [ -f "$f" ] || curl -fLO "$BASE/$f"
+mkdir -p "$WORK/build"
+cd "$WORK"
+
+# --- 1. cwj-3.1.1 の素材を取得し、sha256 を照合（lex_3_1.csv 233MB・model.def 392MB） ---
+for f in char.def unk.def feature.def left-id.def right-id.def lex_3_1.csv model.def; do
+  [ -f "$f" ] || curl -fsSLO "$BASE/$f"
 done
-# lex_3_1.csv 233MB, model.def 392MB が大物
+sha256sum -c "$REPO/scripts/cwj-3.1.1.sha256"
 
-# --- 2. vibrato ビルド用ハーネスをコンパイル ---
-# vibtest/: vibrato 0.5.2 (mecab feature) を使う小さい Rust CLI
-#   modes: bigramgen <dir> / compile <lex.csv> <dir> [out.dic] / diff / tri / tok
-cp -r ~/unidic-artifacts/vibtest /tmp/vibtest || true
-cd /tmp/vibtest && cargo build --release && cd "$WORK"
+# --- 2. vibrato 0.5.2 のハーネス（measure/）をビルド ---
+(cd "$REPO/measure" && cargo build --release --locked)
+VIBTEST="$REPO/measure/target/release/vibtest"
 
-# --- 3. bigram connector を生成（dense行列の代替。IDリマップ不要） ---
-# model.def から素性ペア重みを生成 → bigram.{right,left,cost}
-[ -f bigram.cost ] || /tmp/vibtest/target/release/vibtest bigramgen "$WORK"
+# --- 3. model.def から compact bigram 接続表を生成（dense 行列は Workers に載らない） ---
+"$VIBTEST" bigramgen "$WORK"
+cp char.def bigram.right bigram.left bigram.cost build/
 
-# --- 4. lex をトリム（saf24レシピ: 機能語全保持+品詞別コスト閾値+人名全落とし） ---
-python3 ~/unidic-artifacts/filter_lex_saf24.py lex_3_1.csv lex_cwj_saf24.csv
+# --- 4. 語彙を選び、語コスト・未知語コストに +5376 を足す ---
+python3 "$REPO/scripts/filter_lex_v3.py" lex_3_1.csv build/lex.csv \
+  --unk unk.def --unk-out build/unk.def --lid-rid-map build/lid-rid-map.tsv.gz
 
 # --- 5. コンパイル（from_readers_with_bigram_info, dual_connector=false） ---
-/tmp/vibtest/target/release/vibtest compile lex_cwj_saf24.csv "$WORK" unidic-cwj-saf24.dic
+"$VIBTEST" compile build/lex.csv build build/unidic-cwj-v3.dic
 
-# --- 6. 圧縮: 必ず --long なしの -19 (--longはruzstdが128MBウィンドウを確保し計測を壊す) ---
-zstd -19 -f unidic-cwj-saf24.dic -o unidic-cwj-saf24.dic.zst
+# --- 6. 圧縮: 必ず --long なしの -19（--long は ruzstd が128MBの窓を確保してメモリを壊す） ---
+zstd -19 -f -q build/unidic-cwj-v3.dic -o build/unidic-cwj-v3.dic.zst
 
-echo "DONE: $WORK/unidic-cwj-saf24.dic.zst"
-echo "成果物例: ~/unidic-artifacts/unidic-cwj-saf24.dic.zst (8.0MB, 519,496語, wasm +109MB)"
+sha256sum build/unidic-cwj-v3.dic build/unidic-cwj-v3.dic.zst build/lid-rid-map.tsv.gz
