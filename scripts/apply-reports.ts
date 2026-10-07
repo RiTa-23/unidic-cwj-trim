@@ -5,7 +5,7 @@
  *   1. GET  {HENGE_ORIGIN}/api/admin/reading-reports?status=approved
  *      （Bearer REPORTS_SYNC_TOKEN）で承認済み行を取得
  *   2. 各行を user-lex 13列の行に変換して追記:
- *      - lid/rid: lid-rid-map.tsv（辞書 v3 の同表層の最小コストエントリ）を引く。
+ *      - lid/rid: lid-rid-map.tsv（辞書 v3.1 の同表層の最小コストエントリ）を引く。
  *        表層そのものが無ければ先頭1文字の名詞エントリを借りる
  *      - 品詞は借用元の pos1（なければ名詞扱い）
  *      - cost: 報告の承認値。未指定なら「全部漢字2字以上→-20000、それ以外→3000」の

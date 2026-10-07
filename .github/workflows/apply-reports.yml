@@ -51,13 +51,13 @@ jobs:
       - name: システム辞書（UniDic trim）を取得
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release download unidic-cwj-trim-v2 -p 'unidic-cwj-v3.dic.zst' -D /tmp/dict --clobber
+        run: gh release download unidic-cwj-trim-v3 -p 'unidic-cwj-v3.1.dic.zst' -D /tmp/dict --clobber
 
       - name: 承認済み報告を user-lex.csv に追記
         env:
           HENGE_ORIGIN: ${{ vars.HENGE_ORIGIN }}
           REPORTS_SYNC_TOKEN: ${{ secrets.REPORTS_SYNC_TOKEN }}
-          UNIDIC_DIC_PATH: /tmp/dict/unidic-cwj-v3.dic.zst
+          UNIDIC_DIC_PATH: /tmp/dict/unidic-cwj-v3.1.dic.zst
           READING_WASM_PKG_DIR: vendor/reading-wasm-pkg
         run: bun scripts/apply-reports.ts
 
@@ -82,13 +82,13 @@ jobs:
       - name: 誤読回帰（直したい読みになるか・複合語を壊さないか）
         if: steps.check.outputs.changed == 'true'
         env:
-          UNIDIC_DIC_PATH: /tmp/dict/unidic-cwj-v3.dic.zst
+          UNIDIC_DIC_PATH: /tmp/dict/unidic-cwj-v3.1.dic.zst
         run: bun test
 
       - name: 語彙の巻き込み（追加した行をまとめて）
         if: steps.check.outputs.changed == 'true'
         env:
-          UNIDIC_DIC_PATH: /tmp/dict/unidic-cwj-v3.dic.zst
+          UNIDIC_DIC_PATH: /tmp/dict/unidic-cwj-v3.1.dic.zst
         run: bun scripts/check-collateral.ts --base origin/main
 
       - name: user-lex 更新PRを作り直す

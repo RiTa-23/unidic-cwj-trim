@@ -10,12 +10,13 @@
 
 | Release | アセット | 語彙数 | zst | wasm Δ | 特徴 |
 |---|---|---|---|---|---|
-| `unidic-cwj-trim-v2` | `unidic-cwj-v3.dic.zst`（推奨） | 539,203 | 6.2MB | +76.2MB | 接続表のずれを補正し、頻出語を救済。860件の実測で正解率 88.1%（v7800n-slim2 は 73.1%） |
+| `unidic-cwj-trim-v3` | `unidic-cwj-v3.1.dic.zst`（推奨） | 571,399 | 6.2MB | +78.4MB | v3 に、動詞・形容詞の活用形の欠け（「合わない」「溶く」）を埋める規則を足した（`reports/2026-10-reading-audit-r7.md`） |
+| `unidic-cwj-trim-v2` | `unidic-cwj-v3.dic.zst` | 539,203 | 6.0MB | +76.2MB | 接続表のずれを補正し、頻出語を救済。860件の実測で正解率 88.1%（v7800n-slim2 は 73.1%） |
 | `unidic-cwj-trim-v1` | `unidic-cwj-v7800n-slim2.dic.zst`（旧） | 539,835 | 6.9MB | +84.1MB | 熟語を割って読む偏りがある（`reports/2026-10-reading-audit.md`） |
 
-sha256（v3）: `a6ba1c111b139c4032a4bf808e9a97250341360ca8aa66ee96261d8e771da007`
+sha256（v3.1）: `768240c3c8bffd0e7b617090b59c7efcd746e79bce672aa79f684e208f354de6`（展開後の `.dic` は `3af2116b6e082636b96fba7b19cf14756e09b963ced5ce964971a5aacf500d29`）
 
-v3 は `scripts/build_dict.sh`（CI では `build-dict` ワークフロー）で cwj-3.1.1 の配布物から再現ビルドする。
+v3.1 は `scripts/build_dict.sh`（CI では `build-dict` ワークフロー）で cwj-3.1.1 の配布物から再現ビルドする。
 **語コストに +5376 を足してある**ので、ユーザー辞書を重ねるときは同じ基準で書くこと（下記）。
 
 ## 特徴
@@ -31,7 +32,7 @@ Vibrato の辞書フォーマット（`vibrato` CLI の `compile` 出力、`zstd
 
 ```
 use vibrato::{Dictionary, Tokenizer};
-let dict = Dictionary::read_from_zstd(std::fs::File::open("unidic-cwj-v3.dic.zst")?)?;
+let dict = Dictionary::read_from_zstd(std::fs::File::open("unidic-cwj-v3.1.dic.zst")?)?;
 let tokenizer = Tokenizer::new(dict);
 // トークンの feature[7] がカタカナ読み
 ```

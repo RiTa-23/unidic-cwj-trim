@@ -1,5 +1,5 @@
 /**
- * 検査用のシステム辞書（v3）を Release `unidic-cwj-trim-v2` から `.cache/` に取る（sha256 照合つき）。
+ * 検査用のシステム辞書（v3.1）を Release `unidic-cwj-trim-v3` から `.cache/` に取る（sha256 照合つき）。
  * すでに正しいものがあれば何もしない。
  *
  * 使い方: `bun scripts/fetch-dict.ts`（リポジトリルートから）
@@ -9,8 +9,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DEFAULT_DICT_PATH } from "./lib/reading";
 
-const URL_ = "https://github.com/RiTa-23/unidic-cwj-trim/releases/download/unidic-cwj-trim-v2/unidic-cwj-v3.dic.zst";
-const SHA256 = "a6ba1c111b139c4032a4bf808e9a97250341360ca8aa66ee96261d8e771da007";
+const URL_ = "https://github.com/RiTa-23/unidic-cwj-trim/releases/download/unidic-cwj-trim-v3/unidic-cwj-v3.1.dic.zst";
+const SHA256 = "768240c3c8bffd0e7b617090b59c7efcd746e79bce672aa79f684e208f354de6";
 
 const sha256 = (body: Uint8Array) => createHash("sha256").update(body).digest("hex");
 
