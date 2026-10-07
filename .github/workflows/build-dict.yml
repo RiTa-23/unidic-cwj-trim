@@ -1,0 +1,71 @@
+name: build-dict
+
+# システム辞書（v3）を cwj-3.1.1 の素材から再現ビルドし、Release に上げる（手動起動）。
+# 手順は scripts/build_dict.sh と同じ。素材は sha256 を照合してから使う。
+#
+# **既にある辞書アセットは上書きしない（overwrite を明示したときだけ）。** HENGE は
+# `scripts/unidic/fetch-dict.ts` で辞書の sha256 を固定しているので、同じタグの辞書を
+# 差し替えると HENGE の取得が失敗する。作り直すときは新しいタグに出す。
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "アップロード先の Release タグ"
+        default: "unidic-cwj-trim-v2"
+        required: true
+      overwrite:
+        description: "既にある辞書アセットを上書きする（HENGE が sha を固定しているタグでは使わない）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python の依存
+        run: pip install -r scripts/requirements.txt
+
+      - name: cwj-3.1.1 の素材をキャッシュ
+        uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/cwj311/*.def
+            /tmp/cwj311/lex_3_1.csv
+          key: cwj311-${{ hashFiles('scripts/cwj-3.1.1.sha256') }}
+
+      - name: ビルド
+        run: scripts/build_dict.sh /tmp/cwj311
+
+      - name: Release に上げる
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          OVERWRITE: ${{ inputs.overwrite }}
+        run: |
+          set -euo pipefail
+          cd /tmp/cwj311/build
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
+              --notes "UniDic cwj-3.1.1 トリム辞書 v3（scripts/build_dict.sh で再現ビルド。${GITHUB_SHA}）"
+          fi
+          existing=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
+          if grep -qx "unidic-cwj-v3.dic.zst" <<< "$existing" && [ "$OVERWRITE" != "true" ]; then
+            echo "::error::$TAG に unidic-cwj-v3.dic.zst が既にある。上書きするなら overwrite を付ける"
+            exit 1
+          fi
+          gh release upload "$TAG" unidic-cwj-v3.dic.zst lid-rid-map.tsv.gz --repo "$GITHUB_REPOSITORY" --clobber
+          {
+            echo "### $TAG"
+            echo '```'
+            sha256sum unidic-cwj-v3.dic unidic-cwj-v3.dic.zst lid-rid-map.tsv.gz
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
