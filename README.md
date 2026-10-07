@@ -2,23 +2,26 @@
 
 **UniDic cwj-3.1.1 を軽量トリムし、Vibrato 向けにコンパイルした日本語形態素解析辞書。**
 
-フルサイズ辞書とほぼ同等の読み精度を保ちながら、**zstd 圧縮で約 7MB・wasm メモリ使用量 +84MB** まで削減。**Cloudflare Workers の 128MB メモリ上限内に辞書を丸ごと載せられます。**
+フルサイズ辞書と同等の読み精度を保ちながら、**zstd 圧縮で約 6MB・wasm メモリ使用量 +76MB** まで削減。**Cloudflare Workers の 128MB メモリ上限内に辞書を丸ごと載せられます。**
 
 ## ダウンロード
 
 [Releases](https://github.com/RiTa-23/unidic-cwj-trim/releases) から `.dic.zst` を取得してください。
 
-| アセット | 語彙数 | zst | wasm Δ（推定） | 特徴 |
-|---|---|---|---|---|
-| `unidic-cwj-v7800n-slim2.dic.zst`（推奨） | 539,835 | 6.9MB | +84.1MB | 精度とメモリのバランス最良。人名・固有名詞も収録 |
-| `unidic-cwj-vmax2.dic.zst` | 588,931 | 7.4MB | +105.3MB | 最大語彙。ロード瞬間のメモリピークが128MBに際どい |
+| Release | アセット | 語彙数 | zst | wasm Δ | 特徴 |
+|---|---|---|---|---|---|
+| `unidic-cwj-trim-v2` | `unidic-cwj-v3.dic.zst`（推奨） | 539,203 | 6.2MB | +76.2MB | 接続表のずれを補正し、頻出語を救済。860件の実測で正解率 88.1%（v7800n-slim2 は 73.1%） |
+| `unidic-cwj-trim-v1` | `unidic-cwj-v7800n-slim2.dic.zst`（旧） | 539,835 | 6.9MB | +84.1MB | 熟語を割って読む偏りがある（`reports/2026-10-reading-audit.md`） |
 
-sha256（v7800n-slim2）: `aae2f56b6f88a2a6a2671a072248220166b708a1a4a8d2ffbff610d6c0d06d9f`
+sha256（v3）: `a6ba1c111b139c4032a4bf808e9a97250341360ca8aa66ee96261d8e771da007`
+
+v3 は `scripts/build_dict.sh`（CI では `build-dict` ワークフロー）で cwj-3.1.1 の配布物から再現ビルドする。
+**語コストに +5376 を足してある**ので、ユーザー辞書を重ねるときは同じ基準で書くこと（下記）。
 
 ## 特徴
 
-- **フルサイズとほぼ同等の読み精度**: 5,000文の実測で読み不明の差はごく僅か（フル比 63件 → トリム 71件）。「語彙が多すぎて変な読みを配信する」より「読めない→未登録（UNKNOWN）」に倒す設計
-- **Cloudflare Workers 対応サイズ**: ロード後のwasmメモリ増分 +84.1MB。ロード瞬間ピーク ~104MB で128MB上限内に収まる
+- **フルサイズと同等の読み精度**: お題860件の実測で、UniDic の全語彙を同じ接続表に載せた辞書（86.6%）と同等の 87.1%（ユーザー辞書なし）。頻出語（wordfreq の zipf ≥ 4）の欠落は 0語
+- **Cloudflare Workers 対応サイズ**: ロード後のwasmメモリ増分 +76.2MB（v7800n-slim2 は +84.1MB）
 - **人名・固有名詞も収録**: 信長・織田信長・豊臣秀吉・卑弥呼・紫式部など正しく読める
 - **読みに特化した最小化**: 各エントリの特徴文字列は読み（`features[7]`）のみ保持。残りは潰して約25MB削減（5,000文の読み出力と**完全同一**を検証済み）
 
@@ -28,7 +31,7 @@ Vibrato の辞書フォーマット（`vibrato` CLI の `compile` 出力、`zstd
 
 ```
 use vibrato::{Dictionary, Tokenizer};
-let dict = Dictionary::read_from_zstd(std::fs::File::open("unidic-cwj-v7800n-slim2.dic.zst")?)?;
+let dict = Dictionary::read_from_zstd(std::fs::File::open("unidic-cwj-v3.dic.zst")?)?;
 let tokenizer = Tokenizer::new(dict);
 // トークンの feature[7] がカタカナ読み
 ```
@@ -54,18 +57,20 @@ Cloudflare Workers（wasm-pack ビルドの vibrato-wasm）では、辞書を `a
   - 手元では `bun scripts/fetch-dict.ts`（システム辞書を `.cache/` に取る）のあとに同じコマンドを打つ。既存の全行の棚卸しは `bun scripts/check-collateral.ts --all`
 - **自動PR**: `apply-reports` が HENGE の承認済み報告から `bot/user-lex` ブランチの PR を1本だけ作り、実行のたびに作り直す。語彙の巻き込みがある行は PR に載せず、理由をジョブのサマリと PR 本文に出す
 - **反映**: マージされると `release-user-lex` が Release を差し替え、HENGE の Deploy を `reread=true` で起動する。HENGE はデプロイが通ってから既存お題を再読みする
-- **コストの目安**: `-20000` = 熟語等の強制勝ち、`3000` = 別読みには勝ち・複合語には負ける、`~7500` + lid/rid借用 = 同表層エントリの差し替え
+- **コストの基準（v3）**: 辞書 v3 は語コストに +5376 を足してあるので、**csv の値はずらす前の基準 +5376** で書く。目安は `-14624`（ずらす前 -20000）= 熟語等の強制勝ち、`8376`（3000）= 別読みには勝ち・複合語には負ける、`~12876`（~7500）+ lid/rid借用 = 同表層エントリの差し替え。HENGE の管理画面で選ぶ値（-20000／3000）はずらす前の基準のままで、`apply-reports` が csv に書くときに足す（`scripts/lib/cost.ts`）
 
 ## 再ビルド
 
 `scripts/` に再現レシピを同梱しています。
 
 ```sh
-scripts/build_dict.sh   # cwj-3.1.1 ソース取得 → フィルタ → vibrato compile → zstd
+pip install -r scripts/requirements.txt
+scripts/build_dict.sh   # cwj-3.1.1 ソース取得（sha256 照合）→ bigram 生成 → フィルタ → vibrato compile → zstd
 ```
 
-- `scripts/filter_lex_v2.py`: lex.csv から語彙を絞り、特徴文字列を最小化するフィルタ（コスト閾値 V_MAX=7800 等）
-- `scripts/build_dict.sh`: 一連のビルド手順（vibrato 0.5.2, compact connector bigram, cost_factor=700.0）
+- `scripts/filter_lex_v3.py`: lex.csv から語彙を絞り、語コストを補正し、特徴列を最小化するフィルタ（規則と根拠は先頭のコメント）
+- `scripts/build_dict.sh`: 一連のビルド手順（vibrato 0.5.2, compact connector bigram, cost_factor=700.0）。`.github/workflows/build-dict.yml` が同じ手順で Release に上げる
+- `scripts/filter_lex_v2.py`: 旧辞書 v7800n-slim2 のフィルタ（参考）
 - `measure/`: wasmメモリ・読み出力の計測ハーネス（Rust）
 
 ## ライセンス
@@ -89,9 +94,10 @@ HENGEのリザルト画面でユーザーが報告した読み違いは、管理
 
 1. HENGE管理画面で報告を承認（読みのカタカナ正規化とコストを確定 or 自動推定に委ねる）
 2. ワークフローが `GET /api/admin/reading-reports?status=approved` を呼んで行を生成
-   - lid/rid は `lid-rid-map.tsv.gz`（v7800n-slim2 の各表層の最小コストエントリ）を
+   - lid/rid は `lid-rid-map.tsv.gz`（辞書 v3 の各表層の最小コストエントリ。`build_dict.sh` が作る）を
      参照。表層が無ければ先頭1文字のエントリを借りる
-   - コストは承認値。未指定は「漢字のみ2字以上→-20000、他→3000」で推定
+   - コストは承認値。未指定は「漢字のみ2字以上→-20000、他→3000」で推定。どちらもずらす前の基準で、
+     csv には +5376 して書く
 3. 構文検証・誤読回帰（`bun test`）・語彙の巻き込み（追加行をまとめて）を**push の前に**かけてから
    PR を作る（GH_TOKEN・GITHUB_TOKEN自動）。**bot の PR では `validate` が自動で走らない**
    （Actions のトークンで作った PR・push は別のワークフローを起動しない）ので、ここで検査する

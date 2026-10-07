@@ -5,11 +5,12 @@
  *   1. GET  {HENGE_ORIGIN}/api/admin/reading-reports?status=approved
  *      （Bearer REPORTS_SYNC_TOKEN）で承認済み行を取得
  *   2. 各行を user-lex 13列の行に変換して追記:
- *      - lid/rid: lid-rid-map.tsv（v7800n-slim2 同表層の最小コストエントリ）を引く。
+ *      - lid/rid: lid-rid-map.tsv（辞書 v3 の同表層の最小コストエントリ）を引く。
  *        表層そのものが無ければ先頭1文字の名詞エントリを借りる
  *      - 品詞は借用元の pos1（なければ名詞扱い）
  *      - cost: 報告の承認値。未指定なら「全部漢字2字以上→-20000、それ以外→3000」の
- *        ヒューリスティックで自動推定。
+ *        ヒューリスティックで自動推定。承認値・推定値は**ずらす前の基準**（管理画面の選択肢と同じ）で、
+ *        csv に書くときに COST_SHIFT（+5376）を足す（`scripts/lib/cost.ts`）。
  *        `UNIDIC_DIC_PATH` と `READING_WASM_PKG_DIR` が揃っていれば、代わりに
  *        実測ミニマム探索（#12: promptText を再トークナイズして
  *        expectedKana が切れる最小コスト）を使う。検証ログは
@@ -36,6 +37,7 @@ import { existsSync, readFileSync, appendFileSync, writeFileSync } from "node:fs
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { findRegressions, formatRegressions, surfaceOf } from "./lib/collateral";
+import { COST_SHIFT, toLexCost } from "./lib/cost";
 import { Analyzer } from "./lib/reading";
 
 // `URL#pathname` を使わない。パスに日本語などが入ると %E3… のまま残り、別の場所を指す
@@ -184,7 +186,9 @@ for (const [key, g] of groups) {
         g.reports.length > 1
           ? `${g.reports.length}件を集約・全文脈で勝つ最小値`
           : "実測で勝った最小値";
-      costLog.push(`- \`${g.surface}\` → ${g.expectedKana}: cost **${cost}**（${how}）`);
+      costLog.push(
+        `- \`${g.surface}\` → ${g.expectedKana}: cost **${cost}**（${how}。csv には +${COST_SHIFT} した ${toLexCost(cost)}）`,
+      );
     }
     if (failed > 0) {
       unresolved.push(g.surface);
@@ -194,7 +198,8 @@ for (const [key, g] of groups) {
     }
   }
   cost ??= estimateCost(g.surface);
-  newLines.push(template.replace("{cost}", String(cost)));
+  // 承認値・推定値・実測値はずらす前の基準。辞書 v3 の基準に直して書く
+  newLines.push(template.replace("{cost}", String(toLexCost(cost))));
   appliedIds.push(...ids); // このPRに載った行も、このPRがマージされれば適用完了
 }
 

@@ -22,7 +22,9 @@ jobs:
       - name: Release アセットを差し替え
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload unidic-cwj-trim-v1 user-lex.csv --clobber
+        # HENGE は辞書・user-lex・ライセンス文を同じタグから取る（scripts/unidic/fetch-dict.ts）。
+        # ライセンス文は変わらないが、新しいタグに確実に揃えるため毎回上げる
+        run: gh release upload unidic-cwj-trim-v2 user-lex.csv COPYING.unidic LICENSE-BSD.unidic AUTHORS.unidic --clobber
 
       # マージされた時点で報告の「適用完了」をHENGE側に通知する。
       # csv が main に入った = 適用済みなので、apply-reports の再実行を

@@ -15,6 +15,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { toLexCost } from "./lib/cost";
 
 // ---- wasm loader（HENGE packages/reading-wasm/pkg をそのまま使う） ----
 interface ReadingWasm {
@@ -101,7 +102,10 @@ export interface PickResult {
   attempts: { cost: number; kana: string | null }[]; // 各コストでの実読み（検証ログ用）
 }
 
-/** 試すコスト列。現行デフォルト 3000 から弱→強の順。 */
+/**
+ * 試すコスト列。現行デフォルト 3000 から弱→強の順。**ずらす前の基準**で持ち、
+ * 行に書くときに `toLexCost` で辞書 v3 の基準に直す（`scripts/lib/cost.ts`）。
+ */
 export const COST_CANDIDATES = [
   3000, 2000, 1000, 0, -1000, -2000, -3000, -5000, -8000, -12000, -16000, -20000,
 ];
@@ -184,7 +188,7 @@ export class CostReader {
     const expected = kataToHira(expectedKana);
     const attempts: { cost: number; kana: string | null }[] = [];
     for (const cost of COST_CANDIDATES) {
-      const csv = `${this.baseCsv}${rowTemplate.replace("{cost}", String(cost))}\n`;
+      const csv = `${this.baseCsv}${rowTemplate.replace("{cost}", String(toLexCost(cost)))}\n`;
       const reader = this.withCsv(csv);
       try {
         const toks = parseTokens(reader.tokenize(promptText));
