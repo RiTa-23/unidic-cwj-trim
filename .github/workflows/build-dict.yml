@@ -63,6 +63,8 @@ jobs:
             exit 1
           fi
           gh release upload "$TAG" unidic-cwj-v3.dic.zst lid-rid-map.tsv.gz --repo "$GITHUB_REPOSITORY" --clobber
+          # HENGE は辞書と一緒にライセンス文（UniDic の BSD 条文と著作権表示）も取る
+          (cd "$GITHUB_WORKSPACE" && gh release upload "$TAG" COPYING.unidic LICENSE-BSD.unidic AUTHORS.unidic --clobber)
           {
             echo "### $TAG"
             echo '```'

@@ -82,3 +82,15 @@ unk 72→71、vs-full diff 36.90→35.58%。**ロード時ピーク ~104MB**（s
 手法: 特徴文字列（pos・活用・原形・発音列）はtokenize出力のラベルでしかないため最小化しても
 読み出力が完全に同一（実測0.00%差）。これで-24.5MBを語彙削減なしに獲得。
 フィルタ: `filter_lex_v2.py`。代替候補: `unidic-cwj-vmax2.dic.zst`(589k語・+105.3MB・unk63・ロード~125MB)。
+
+---
+
+## 追記: 辞書 v3 (2026-10-07)
+
+**推奨辞書が更新**: Release `unidic-cwj-trim-v2` の `unidic-cwj-v3.dic.zst`。詳細は `reports/2026-10-reading-audit.md`。
+
+- **上の「trim と full は互角」は、両方が同じ偏りを持っていたための見かけだった。** compact bigram 接続表は MeCab の接続行列より
+  全ペアで約5376低く（3.1.1 の model.def から作り直しても同じ）、熟語を割った経路が勝っていた。full も同じ接続表で作っていた
+- v3 は語コストに +5376 を足して打ち消し、重複除去を (表層, lid, rid, 読み) に、頻出語（wordfreq）の救済、カタカナ名詞の除去、
+  濁音形の付け替え、特徴列の縮小を入れた。お題860件で 73.1% → 88.1%（user-lex 込み）、wasm +84.1MB → +76.2MB
+- v7800n-slim2 は filter_lex_v2.py と一致していなかった（姓 8,623件の欠落、#32）。v3 は `scripts/build_dict.sh` で素材から再現ビルドする

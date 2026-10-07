@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_DICT_PATH = fileURLToPath(
-  new URL("../../.cache/unidic-cwj-v7800n-slim2.dic.zst", import.meta.url),
+  new URL("../../.cache/unidic-cwj-v3.dic.zst", import.meta.url),
 );
 const PKG_DIR = fileURLToPath(new URL("../../vendor/reading-wasm-pkg/", import.meta.url));
 export const CSV_PATH = fileURLToPath(new URL("../../user-lex.csv", import.meta.url));
