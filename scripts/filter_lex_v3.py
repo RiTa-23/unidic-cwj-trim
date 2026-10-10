@@ -29,7 +29,13 @@
 #   8. 動詞・形容詞は、どれか1行でも残した語彙素（語彙素+語彙素読み）について、標準表記の
 #      基本的な活用形（INFL_FORMS）をコストによらず残す。活用形は表層ごとに別の行なので、
 #      未然形「合わ」「響か」「向か」や仮定形「弱けれ」、終止形「溶く」だけが閾値で落ち、
-#      「合わない」が 合/あわせ+わ+ない、「溶く」が UNKNOWN_READING になっていた。約 3.8 万行増、wasm +2.5MB
+#      「合わない」が 合/あわせ+わ+ない、「溶く」が UNKNOWN_READING になっていた。約 3.2 万行増、wasm +2.2MB
+#
+# v3.2 で足した規則（reports/2026-10-kwdlc.md。KWDLC の Web の文 1万件で測った）:
+#   9. 規則6を、濁音形が基本形より少し高い組（差 RENDAKU_GAP 以下）にも広げる。UniDic は 会社/ガイシャ（+76）・
+#      通り/ドオリ（+102）・時計/ドケイ（+211）を基本形と同じ lid/rid で持つので、名詞の後でも基本形が勝ち、
+#      証券会社→しょうけんかいしゃ・目覚まし時計→めざましとけい になっていた。差を広げるほど拾う語は増えるが、
+#      500 では 寺→でら（金閣寺）・日→び（土日）、無制限では 票→びょう・汁→じる も濁った
 import argparse, csv, gzip, math, re, sys
 from collections import defaultdict
 
@@ -41,6 +47,7 @@ V_MAX, A_MAX, N_MAX, SN_MAX, P_MAX, NAME_MAX = 7800, 7200, 6200, 7800, 6800, 680
 COST_SHIFT = 5376
 FREQ_Z, FREQ_MARGIN = 2.0, 3000
 RENDAKU_LID, RENDAKU_PEN = "10234", 1500  # 10234 = 接尾辞-名詞的-一般 で最も多い lid
+RENDAKU_GAP = 300  # 規則9: 濁音形が基本形よりこの値まで高い組も付け替える
 INFLECTING = ("動詞", "形容詞")
 INFL_FORMS = ("未然形-一般", "連用形-一般", "連用形-促音便", "連用形-イ音便", "連用形-撥音便",
               "終止形-一般", "連体形-一般", "仮定形-一般", "語幹-一般", "意志推量形", "命令形")
@@ -124,7 +131,7 @@ def main():
         base = [int(kept[i][COST]) for i in ix if kept[i][IFORM] == "基本形"]
         if not base: continue
         for i in ix:
-            if kept[i][IFORM] == "濁音形" and int(kept[i][COST]) < min(base):
+            if kept[i][IFORM] == "濁音形" and int(kept[i][COST]) <= min(base) + RENDAKU_GAP:
                 kept[i] = list(kept[i]); kept[i][LID] = RENDAKU_LID
                 kept[i][COST] = str(int(kept[i][COST]) + RENDAKU_PEN); remapped += 1
 
