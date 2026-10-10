@@ -10,7 +10,7 @@ import { dirname } from "node:path";
 import { DEFAULT_DICT_PATH } from "./lib/reading";
 
 const URL_ = "https://github.com/RiTa-23/unidic-cwj-trim/releases/download/unidic-cwj-trim-v4/unidic-cwj-v3.2.dic.zst";
-const SHA256 = "768240c3c8bffd0e7b617090b59c7efcd746e79bce672aa79f684e208f354de6";
+const SHA256 = "f4775d178eb3aaaca9579cbcbd6c1d612a8072630d0733e7968e6c4317314e86";
 
 const sha256 = (body: Uint8Array) => createHash("sha256").update(body).digest("hex");
 
