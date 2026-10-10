@@ -6,6 +6,7 @@
 1文ずつ送る。改行でつないでまとめて送ると、前の文の末尾と続けて解析され
 （「…煮込む\\n包丁で」→ ぼうちょう）、結果が変わるため。
 漢数字（一・九 など）には読みが返らず、漢字のまま残る。score.py はそれを却下に数える。
+4並列・各0.8秒待ちで毎秒4件ほど。6並列にすると 429 Too Many Requests が多発した。
 """
 import json
 import os
@@ -34,10 +35,13 @@ def call(text: str) -> list:
                 data = json.load(res)
             if "result" in data:
                 return data["result"]["word"]
+            if data.get("error", {}).get("code") == -32602:  # Invalid params（KWDLC で1文あった）。再送しても同じ
+                print("INVALID", text, file=sys.stderr)
+                return [{"surface": "<ERR>"}]
             print("ERR", data, file=sys.stderr)
-        except Exception as e:  # 一時的な失敗は待って再送する
+        except Exception as e:  # 429（送りすぎ）・502 は待って再送する
             print("EXC", e, file=sys.stderr)
-        time.sleep(2 ** attempt)
+        time.sleep(5 * 2 ** attempt)
     raise SystemExit(f"failed: {text}")
 
 

@@ -4,7 +4,7 @@
     python3 eval/compare/score.py corpus.tsv out1.txt [out2.txt ...]
 
 句読点・！？・「」と空白を両側から落として、別解（| 区切り）のどれかと一致すれば正解。
-`<UNK>` か、読みに漢字が残った文は却下（読めない）に数える。CER では却下の文を全文字誤りとする。
+`<UNK>`・`<ERR>`（API のエラー）か、読みに漢字が残った文は却下（読めない）に数える。CER では却下の文を全文字誤りとする。
 """
 import re
 import sys
@@ -40,7 +40,7 @@ def main(tsv: str, outs: list) -> None:
             expected = [norm(e) for e in row[1].split("|")]
             n += 1
             chars += len(expected[0])
-            if out == "<UNK>" or HAN.search(out):
+            if out in ("<UNK>", "<ERR>") or HAN.search(out):
                 unk += 1
                 edits += len(expected[0])
                 continue
