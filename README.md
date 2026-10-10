@@ -56,7 +56,7 @@ Cloudflare Workers（wasm-pack ビルドの vibrato-wasm）では、辞書を `a
   - 構文: `bun scripts/validate-user-lex.ts`（13列・lid/rid/cost整数・読みカタカナ）
   - 誤読回帰: `bun test`（`scripts/regression.test.ts`。直したい読みになるか・既存の複合語を壊さないか。行を足したら、その文と壊しそうな複合語をここに足す）
   - 語彙の巻き込み: `bun scripts/check-collateral.ts`。増えた行の表層を含む辞書の語を1語ずつ解析し、**辞書の1語として読めていた語の読みが変わったら失敗**にする。1字や語幹の裸登録（田→タ で 水田→みずた）はここで止まる。辞書の読みの方が誤っている場合だけ `collateral-allow.tsv` に足す
-  - 手元では `bun scripts/fetch-dict.ts`（システム辞書を `.cache/` に取る）のあとに同じコマンドを打つ。既存の全行の棚卸しは `bun scripts/check-collateral.ts --all`
+  - 手元では `bun scripts/fetch-dict.ts`（システム辞書を `.cache/` に取る）のあとに同じコマンドを打つ。既存の全行の棚卸しは `bun scripts/check-collateral.ts --all`（巻き込み）と `bun scripts/audit-rows.ts eval/corpus/*.tsv`（1行ずつ外して読みが変わる文を数える。`reports/2026-10-user-lex-cleanup.md`）
 - **自動PR**: `apply-reports` が HENGE の承認済み報告から `bot/user-lex` ブランチの PR を1本だけ作り、実行のたびに作り直す。語彙の巻き込みがある行は PR に載せず、理由をジョブのサマリと PR 本文に出す
 - **反映**: マージされると `release-user-lex` が Release を差し替え、HENGE の Deploy を `reread=true` で起動する。HENGE はデプロイが通ってから既存お題を再読みする
 - **コストの基準（v3）**: 辞書 v3 は語コストに +5376 を足してあるので、**csv の値はずらす前の基準 +5376** で書く。目安は `-14624`（ずらす前 -20000）= 熟語等の強制勝ち、`8376`（3000）= 別読みには勝ち・複合語には負ける、`~12876`（~7500）+ lid/rid借用 = 同表層エントリの差し替え。HENGE の管理画面で選ぶ値（-20000／3000）はずらす前の基準のままで、`apply-reports` が csv に書くときに足す（`scripts/lib/cost.ts`）
