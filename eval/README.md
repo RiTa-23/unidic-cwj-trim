@@ -18,3 +18,14 @@ UNIDIC_DIC_PATH=path/to/other.dic.zst bun eval/run-eval.ts --lex-shift 5376 eval
 
 期待の読みは揺れうる。読みが2通り成り立つ語（深々・注ぐ・蛙・明日・〜所 等）は別解を並べてある。
 件数の小さな差（1〜2件）は期待値の揺れの範囲として読むこと。
+
+## KWDLC（手元でのみ）
+
+`kwdlc2tsv.py` で KWDLC（京都大学ウェブ文書リードコーパス）を同じ TSV に変換できる。研究目的の公開で、
+元の Web 文書の著作権者の許諾を得ていないので、**変換した文はリポジトリに入れない**（結果は `reports/2026-10-kwdlc.md`）。
+
+```sh
+git clone --depth 1 https://github.com/ku-nlp/KWDLC.git /tmp/KWDLC
+python3 eval/kwdlc2tsv.py /tmp/KWDLC > /tmp/kwdlc.tsv
+bun eval/run-eval.ts /tmp/kwdlc.tsv
+```
