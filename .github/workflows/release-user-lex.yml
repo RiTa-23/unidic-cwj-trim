@@ -4,11 +4,15 @@ name: release-user-lex
 # HENGEは `dict:fetch` でこのアセットを取るので、ここを更新しないと
 # 本番の読みWorkerは古いユーザー辞書を使い続ける。
 # 検査（validate: 構文・誤読回帰・語彙の巻き込み）は PR の時点で済んでいる。
+#
+# アップロード先のタグを変えたとき（辞書を新しいタグに出したとき）は user-lex.csv が変わらなくても
+# 新しいタグに上げる必要があるので、このファイル自身の変更でも動かす。手動でも起動できる。
 
 on:
   push:
     branches: [main]
-    paths: ["user-lex.csv"]
+    paths: ["user-lex.csv", ".github/workflows/release-user-lex.yml"]
+  workflow_dispatch:
 
 permissions:
   contents: write
