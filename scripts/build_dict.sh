@@ -1,10 +1,10 @@
 #!/bin/bash
-# cwj-3.1.1 → トリム辞書 v3.1（unidic-cwj-v3.1.dic.zst）の再現ビルド。
+# cwj-3.1.1 → トリム辞書 v3.2（unidic-cwj-v3.2.dic.zst）の再現ビルド。
 # Release の辞書はこの手順で作る（.github/workflows/build-dict.yml が CI で同じものを回す）。
 #
 #   使い方: scripts/build_dict.sh [作業ディレクトリ（既定 /tmp/cwj311）]
 #   前提:   cargo（rust）, python3（pip install -r scripts/requirements.txt）, zstd, curl
-#   成果物: <作業>/build/unidic-cwj-v3.1.dic.zst と lid-rid-map.tsv.gz
+#   成果物: <作業>/build/unidic-cwj-v3.2.dic.zst と lid-rid-map.tsv.gz
 #
 # 規則は scripts/filter_lex_v3.py の先頭、根拠は reports/2026-10-reading-audit.md。
 # compact bigram 接続表（vibrato の generate_bigram_info）は MeCab の接続行列より全ペアで
@@ -37,9 +37,9 @@ python3 "$REPO/scripts/filter_lex_v3.py" lex_3_1.csv build/lex.csv \
   --unk unk.def --unk-out build/unk.def --lid-rid-map build/lid-rid-map.tsv.gz
 
 # --- 5. コンパイル（from_readers_with_bigram_info, dual_connector=false） ---
-"$VIBTEST" compile build/lex.csv build build/unidic-cwj-v3.1.dic
+"$VIBTEST" compile build/lex.csv build build/unidic-cwj-v3.2.dic
 
 # --- 6. 圧縮: 必ず --long なしの -19（--long は ruzstd が128MBの窓を確保してメモリを壊す） ---
-zstd -19 -f -q build/unidic-cwj-v3.1.dic -o build/unidic-cwj-v3.1.dic.zst
+zstd -19 -f -q build/unidic-cwj-v3.2.dic -o build/unidic-cwj-v3.2.dic.zst
 
-sha256sum build/unidic-cwj-v3.1.dic build/unidic-cwj-v3.1.dic.zst build/lid-rid-map.tsv.gz
+sha256sum build/unidic-cwj-v3.2.dic build/unidic-cwj-v3.2.dic.zst build/lid-rid-map.tsv.gz

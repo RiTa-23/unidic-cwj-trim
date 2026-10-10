@@ -1,6 +1,6 @@
 name: build-dict
 
-# システム辞書（v3.1）を cwj-3.1.1 の素材から再現ビルドし、Release に上げる（手動起動）。
+# システム辞書（v3.2）を cwj-3.1.1 の素材から再現ビルドし、Release に上げる（手動起動）。
 # 手順は scripts/build_dict.sh と同じ。素材は sha256 を照合してから使う。
 #
 # **既にある辞書アセットは上書きしない（overwrite を明示したときだけ）。** HENGE は
@@ -11,7 +11,7 @@ on:
     inputs:
       tag:
         description: "アップロード先の Release タグ"
-        default: "unidic-cwj-trim-v3"
+        default: "unidic-cwj-trim-v4"
         required: true
       overwrite:
         description: "既にある辞書アセットを上書きする（HENGE が sha を固定しているタグでは使わない）"
@@ -55,19 +55,19 @@ jobs:
           cd /tmp/cwj311/build
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
-              --notes "UniDic cwj-3.1.1 トリム辞書 v3.1（scripts/build_dict.sh で再現ビルド。${GITHUB_SHA}）"
+              --notes "UniDic cwj-3.1.1 トリム辞書 v3.2（scripts/build_dict.sh で再現ビルド。${GITHUB_SHA}）"
           fi
           existing=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
-          if grep -qx "unidic-cwj-v3.1.dic.zst" <<< "$existing" && [ "$OVERWRITE" != "true" ]; then
-            echo "::error::$TAG に unidic-cwj-v3.1.dic.zst が既にある。上書きするなら overwrite を付ける"
+          if grep -qx "unidic-cwj-v3.2.dic.zst" <<< "$existing" && [ "$OVERWRITE" != "true" ]; then
+            echo "::error::$TAG に unidic-cwj-v3.2.dic.zst が既にある。上書きするなら overwrite を付ける"
             exit 1
           fi
-          gh release upload "$TAG" unidic-cwj-v3.1.dic.zst lid-rid-map.tsv.gz --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" unidic-cwj-v3.2.dic.zst lid-rid-map.tsv.gz --repo "$GITHUB_REPOSITORY" --clobber
           # HENGE は辞書と一緒にライセンス文（UniDic の BSD 条文と著作権表示）も取る
           (cd "$GITHUB_WORKSPACE" && gh release upload "$TAG" COPYING.unidic LICENSE-BSD.unidic AUTHORS.unidic --clobber)
           {
             echo "### $TAG"
             echo '```'
-            sha256sum unidic-cwj-v3.1.dic unidic-cwj-v3.1.dic.zst lid-rid-map.tsv.gz
+            sha256sum unidic-cwj-v3.2.dic unidic-cwj-v3.2.dic.zst lid-rid-map.tsv.gz
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
