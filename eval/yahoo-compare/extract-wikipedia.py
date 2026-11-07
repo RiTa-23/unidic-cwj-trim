@@ -1,6 +1,6 @@
 import bz2, sys, json, random, re, hashlib, xml.etree.ElementTree as ET
 sys.path.insert(0, sys.argv[2])
-from common import eligible, split_sentences, NUMERAL, TYPABLE, KANJI
+from common import eligible, modern, split_sentences, NUMERAL, TYPABLE, KANJI
 NS="{http://www.mediawiki.org/xml/export-0.11/}"
 def strip_nested(t,o,c,mark):
     out=[];d=0;i=0
@@ -50,9 +50,9 @@ for path in sys.argv[3:]:
                     rest=split_sentences(links(m.group(3))) or [""]
                     s=x+rest[0]
                     if KANJI.search(x) and TYPABLE.match(x) and KANA.match(rd) and eligible(s):
-                        head.append({"id":f"{tag}:{pid}:h","doc":pid,"text":s,"headword":x,"gold_head":rd})
+                        head.append({"id":f"{tag}:{pid}:h","doc":pid,"text":s,"headword":x,"gold_head":rd,"modern":modern(s)})
             for s in split_sentences(links(line)):
-                if eligible(s): got.append(s)
+                if eligible(s) and modern(s): got.append(s)
         random.Random(pid).shuffle(got)
         for i,s in enumerate(got[:3]): main.append({"id":f"{tag}:{pid}:{i}","doc":pid,"text":s})
 print("pages",pages,"main",len(main),"head",len(head))

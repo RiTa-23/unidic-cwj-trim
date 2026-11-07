@@ -32,4 +32,4 @@ bun eval/run-eval.ts /tmp/kwdlc.tsv
 
 ## Yahoo API との比較（手元でのみ）
 
-`yahoo-compare/` は、数字を含まない文で本番構成と Yahoo! ふりがな API を比べるスクリプトである。使ったコーパスの文と読みの出力はリポジトリに入れない。結果と再現の手順は `reports/2026-11-yahoo-numeral-free.md` にある。
+`yahoo-compare/` は、数字を含まず現代の語彙に絞った文で本番構成と Yahoo! ふりがな API を比べるスクリプトである。使ったコーパスの文と読みの出力はリポジトリに入れない。結果と再現の手順は `reports/2026-11-yahoo-numeral-free.md` にある。

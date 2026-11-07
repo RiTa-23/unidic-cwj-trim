@@ -1,6 +1,13 @@
-import glob, sys, json, random, re, collections
+import csv, glob, sys, json, random, re, collections
 sys.path.insert(0, sys.argv[2])
-from common import eligible
+from common import eligible, modern
+# 現代の語彙に絞る: 1900年以降に生まれた日本人著者の、新字新仮名の作品だけを使う。sys.argv[4] は青空文庫の作品一覧の CSV
+# 時代小説が中心の著者は除く。「云」は古い表記なので、含む文を除く
+PERIOD_AUTHORS = {"山本周五郎", "本庄陸男"}
+works = set()
+for r in csv.DictReader(open(sys.argv[4], encoding="utf-8-sig")):
+    if r["役割フラグ"] == "著者" and r["文字遣い種別"] == "新字新仮名" and r["生年月日"][:4] >= "1900" and f"{r['姓']}{r['名']}" not in PERIOD_AUTHORS:
+        works.add(f"{r['姓']}{r['名']}/{r['作品名']}")
 labels=collections.Counter(); rows=[]; seen=set(); total=0; bad=0
 KANA=re.compile(r"^[ぁ-ゖァ-ヺー]+$")
 ENDS=set("。！？")
@@ -9,12 +16,13 @@ def flush(segs,doc,idx):
     if not segs: return
     total+=1
     t="".join(s for s,_ in segs)
-    if not eligible(t) or t in seen: return
+    if not eligible(t) or not modern(t) or "云" in t or t in seen: return
     if any(not KANA.search(g) for _,g in segs if g is not None): bad+=1; return
     seen.add(t)
     rows.append({"id":f"{doc}:{idx}","doc":doc,"text":t,"gold":"".join(g if g is not None else s for s,g in segs)})
 for p in sorted(glob.glob(sys.argv[1]+"/x/aozora_dataset/*/*/*.txt")):
     doc="/".join(p.split('/')[-3:-1]); segs=[]; idx=0; inbody=False
+    if doc not in works: continue
     for line in open(p,encoding='utf-8',errors='replace'):
         c=line.rstrip("\n").split("\t")
         if line.startswith("行番号:"):
